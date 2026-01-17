@@ -194,3 +194,40 @@ FakesAssemblies/
 
 # Visual Studio 6 workspace options file
 *.opt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+
+# Instagram Scraper specific
+output/
+session-*
+.env
+*.session
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
