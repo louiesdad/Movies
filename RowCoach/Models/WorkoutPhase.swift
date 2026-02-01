@@ -1,6 +1,6 @@
 import Foundation
 
-enum WorkoutPhase: String, Codable, CaseIterable {
+enum WorkoutPhase: String, Codable {
     case warmup
     case work
     case rest
@@ -39,14 +39,4 @@ enum WorkoutPhase: String, Codable, CaseIterable {
         }
     }
 
-    /// Color name used in the HUD for each phase
-    var phaseColorName: String {
-        switch self {
-        case .warmup:   return "orange"
-        case .work:     return "red"
-        case .rest:     return "green"
-        case .cooldown: return "blue"
-        case .finished: return "gray"
-        }
-    }
 }

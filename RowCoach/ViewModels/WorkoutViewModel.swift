@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import AVFoundation
 
 final class WorkoutViewModel: ObservableObject {
 
@@ -140,6 +139,9 @@ final class WorkoutViewModel: ObservableObject {
     }
 
     private func advancePhase() {
+        // Carry forward any time that overshot past zero to prevent drift (fixes H4)
+        let overflow = -phaseTimeRemaining
+
         currentPhaseIndex += 1
 
         if currentPhaseIndex >= phases.count {
@@ -152,7 +154,7 @@ final class WorkoutViewModel: ObservableObject {
 
         let next = phases[currentPhaseIndex]
         currentPhase = next.phase
-        phaseTimeRemaining = next.duration
+        phaseTimeRemaining = next.duration - overflow
         updateIntervalNumber()
     }
 
@@ -167,12 +169,10 @@ final class WorkoutViewModel: ObservableObject {
     private func updateIntervalNumber() {
         // Count how many work phases we've reached so far (including current)
         var workCount = 0
-        for i in 0...currentPhaseIndex {
-            if phases[i].phase == .work {
-                workCount += 1
-            }
+        for i in 0...currentPhaseIndex where phases[i].phase == .work {
+            workCount += 1
         }
-        currentIntervalNumber = max(workCount, currentPhase == .rest ? workCount : workCount)
+        currentIntervalNumber = workCount
     }
 
     // MARK: - Formatting

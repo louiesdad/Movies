@@ -15,12 +15,16 @@ struct WorkoutConfig: Codable, Equatable {
         cooldownDuration: 300  // 5 minutes
     )
 
-    /// Total workout duration in seconds
+    /// Total workout duration in seconds.
+    /// Must match the sum of durations produced by `phases`.
     var totalDuration: TimeInterval {
-        warmupDuration
-        + Double(intervalCount) * (workDuration + restDuration)
-        - restDuration  // no rest after the last work interval
-        + cooldownDuration
+        guard intervalCount > 0 else {
+            return warmupDuration + cooldownDuration
+        }
+        return warmupDuration
+            + Double(intervalCount) * workDuration
+            + Double(intervalCount - 1) * restDuration
+            + cooldownDuration
     }
 
     /// Builds the ordered list of phases with their durations

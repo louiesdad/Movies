@@ -70,7 +70,7 @@ struct VideoLibraryView: View {
                     Text(video.title)
                         .font(.body.weight(.medium))
                         .foregroundColor(.primary)
-                    Text(video.description)
+                    Text(video.subtitle)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(2)

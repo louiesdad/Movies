@@ -3,7 +3,7 @@ import Foundation
 struct VideoItem: Identifiable, Codable, Equatable {
     let id: UUID
     var title: String
-    var description: String
+    var subtitle: String
     var urlString: String
     var isCustom: Bool
 
@@ -11,10 +11,10 @@ struct VideoItem: Identifiable, Codable, Equatable {
         URL(string: urlString)
     }
 
-    init(id: UUID = UUID(), title: String, description: String, urlString: String, isCustom: Bool = false) {
+    init(id: UUID = UUID(), title: String, subtitle: String, urlString: String, isCustom: Bool = false) {
         self.id = id
         self.title = title
-        self.description = description
+        self.subtitle = subtitle
         self.urlString = urlString
         self.isCustom = isCustom
     }
@@ -27,17 +27,17 @@ struct VideoLibrary {
     static let sampleVideos: [VideoItem] = [
         VideoItem(
             title: "Calm River Row",
-            description: "Peaceful POV rowing on a quiet river at dawn",
+            subtitle: "Peaceful POV rowing on a quiet river at dawn",
             urlString: "https://videos.pexels.com/video-files/5765290/5765290-hd_1920_1080_30fps.mp4"
         ),
         VideoItem(
             title: "Lake Morning",
-            description: "Early morning row across a still mountain lake",
+            subtitle: "Early morning row across a still mountain lake",
             urlString: "https://videos.pexels.com/video-files/6394054/6394054-uhd_2560_1440_25fps.mp4"
         ),
         VideoItem(
             title: "Ocean Coastal Row",
-            description: "Rowing along a scenic ocean coastline",
+            subtitle: "Rowing along a scenic ocean coastline",
             urlString: "https://videos.pexels.com/video-files/4925025/4925025-hd_1920_1080_30fps.mp4"
         ),
     ]

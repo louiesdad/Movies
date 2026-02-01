@@ -8,6 +8,10 @@ struct WorkoutPlayerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showControls = true
     @State private var showStopConfirmation = false
+    @State private var videoStatus: VideoPlayerStatus = .loading
+    @State private var autoHideTask: Task<Void, Never>?
+    /// Track whether workout was running before the stop dialog paused it
+    @State private var wasRunningBeforeStopDialog = false
 
     init(config: WorkoutConfig, video: VideoItem) {
         self.config = config
@@ -17,65 +21,124 @@ struct WorkoutPlayerView: View {
 
     var body: some View {
         ZStack {
-            // Background: black
+            // Layer 1: Background
             Color.black.ignoresSafeArea()
 
-            // Video layer (full screen)
+            // Layer 2: Video
             if let url = video.url {
                 VideoPlayerView(
                     url: url,
                     playbackRate: viewModel.videoPlaybackRate,
-                    isPlaying: viewModel.isRunning
+                    isPlaying: viewModel.isRunning,
+                    status: $videoStatus
                 )
                 .ignoresSafeArea()
+                .allowsHitTesting(false)
             }
 
-            // HUD overlay
+            // Layer 3: Video status overlays (loading / error)
+            videoStatusOverlay
+
+            // Layer 4: HUD overlay
             if !viewModel.isFinished {
                 WorkoutHUDView(viewModel: viewModel)
+                    .allowsHitTesting(false)
                     .transition(.opacity)
             }
 
-            // Controls overlay (top bar)
-            if showControls {
-                controlsOverlay
-                    .transition(.opacity)
-            }
-
-            // Finished overlay
-            if viewModel.isFinished {
-                finishedOverlay
-            }
-
-            // Tap to show/hide controls
+            // Layer 5: Tap-to-toggle (BELOW controls, ABOVE HUD)
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         showControls.toggle()
                     }
+                    if showControls {
+                        scheduleAutoHide()
+                    }
                 }
                 .allowsHitTesting(!viewModel.isFinished)
+
+            // Layer 6: Controls overlay (ON TOP — receives taps over tap-catcher)
+            if showControls && !viewModel.isFinished {
+                controlsOverlay
+                    .transition(.opacity)
+            }
+
+            // Layer 7: Finished overlay (topmost)
+            if viewModel.isFinished {
+                finishedOverlay
+            }
         }
         .statusBarHidden(true)
         .onAppear {
             viewModel.start()
-            // Auto-hide controls after 3 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                withAnimation { showControls = false }
-            }
+            scheduleAutoHide()
         }
         .onDisappear {
+            autoHideTask?.cancel()
             viewModel.stop()
         }
-        .confirmationDialog("End Workout?", isPresented: $showStopConfirmation) {
+        .confirmationDialog("End Workout?", isPresented: $showStopConfirmation, titleVisibility: .visible) {
             Button("End Workout", role: .destructive) {
                 viewModel.stop()
                 dismiss()
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancel", role: .cancel) {
+                // Auto-resume if workout was running before we paused for the dialog
+                if wasRunningBeforeStopDialog {
+                    viewModel.resume()
+                }
+            }
         } message: {
             Text("Are you sure you want to end this workout?")
+        }
+    }
+
+    // MARK: - Auto-hide Controls
+
+    private func scheduleAutoHide() {
+        autoHideTask?.cancel()
+        autoHideTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            withAnimation { showControls = false }
+        }
+    }
+
+    // MARK: - Video Status Overlay
+
+    @ViewBuilder
+    private var videoStatusOverlay: some View {
+        switch videoStatus {
+        case .loading:
+            VStack(spacing: 12) {
+                ProgressView()
+                    .scaleEffect(1.5)
+                    .tint(.white)
+                Text("Loading video...")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+            }
+        case .error(let message):
+            VStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 36))
+                    .foregroundColor(.yellow)
+                Text("Video failed to load")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                Text("The workout timer is still running.")
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.5))
+            }
+        case .ready:
+            EmptyView()
         }
     }
 
@@ -86,6 +149,7 @@ struct WorkoutPlayerView: View {
             HStack {
                 // Close / Stop button
                 Button {
+                    wasRunningBeforeStopDialog = viewModel.isRunning
                     if viewModel.isRunning || viewModel.isPaused {
                         viewModel.pause()
                         showStopConfirmation = true

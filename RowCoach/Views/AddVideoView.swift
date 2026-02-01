@@ -5,7 +5,7 @@ struct AddVideoView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
-    @State private var description = ""
+    @State private var subtitle = ""
     @State private var urlString = ""
     @State private var showError = false
 
@@ -14,7 +14,7 @@ struct AddVideoView: View {
             Form {
                 Section("Video Details") {
                     TextField("Title", text: $title)
-                    TextField("Description (optional)", text: $description)
+                    TextField("Description (optional)", text: $subtitle)
                 }
 
                 Section("Video URL") {
@@ -60,7 +60,7 @@ struct AddVideoView: View {
 
         let video = VideoItem(
             title: title,
-            description: description.isEmpty ? "Custom video" : description,
+            subtitle: subtitle.isEmpty ? "Custom video" : subtitle,
             urlString: urlString,
             isCustom: true
         )

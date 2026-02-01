@@ -4,7 +4,7 @@ struct HomeView: View {
     @State private var config = WorkoutConfig.load()
     @State private var selectedVideo: VideoItem?
     @State private var showVideoLibrary = false
-    @State private var showWorkout = false
+    @State private var workoutVideo: VideoItem?
 
     var body: some View {
         NavigationStack {
@@ -22,10 +22,8 @@ struct HomeView: View {
             .sheet(isPresented: $showVideoLibrary) {
                 VideoLibraryView(selectedVideo: $selectedVideo)
             }
-            .fullScreenCover(isPresented: $showWorkout) {
-                if let video = selectedVideo {
-                    WorkoutPlayerView(config: config, video: video)
-                }
+            .fullScreenCover(item: $workoutVideo) { video in
+                WorkoutPlayerView(config: config, video: video)
             }
             .onChange(of: config) { _, newConfig in
                 newConfig.save()
@@ -65,7 +63,7 @@ struct HomeView: View {
                         Text(selectedVideo?.title ?? "Choose a video")
                             .font(.body.weight(.medium))
                             .foregroundColor(.primary)
-                        if let desc = selectedVideo?.description {
+                        if let desc = selectedVideo?.subtitle {
                             Text(desc)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -85,7 +83,7 @@ struct HomeView: View {
     private var startButton: some View {
         Button {
             config.save()
-            showWorkout = true
+            workoutVideo = selectedVideo
         } label: {
             HStack {
                 Image(systemName: "play.fill")
