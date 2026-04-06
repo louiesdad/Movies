@@ -29,6 +29,8 @@ class TicketAnalysis:
     unresolved_defect_count: int
     raw_velocity: Optional[float]           # days per story point
     adjusted_pace: Optional[float]           # cycle_time / complexity (days per unit)
+    backlog_wait_days: Optional[float]       # lead_time - cycle_time
+    backlog_wait_pct: Optional[float]        # % of lead time spent waiting in backlog
     relative_efficiency: Optional[str]       # qualitative rating
 
 
@@ -56,7 +58,7 @@ class ProjectStats:
     avg_defects_by_category: Dict[str, float]  # complexity category -> avg defects
     # Quality
     defect_free_rate: float   # % of tickets with zero defects
-    critical_defect_rate: Optional[float]  # None when total defects is 0
+    critical_defect_rate: float  # % of completed tickets that had a critical defect
     # Velocity
     avg_raw_velocity: float
     avg_adjusted_pace: float
@@ -64,6 +66,10 @@ class ProjectStats:
     stats_by_type: Dict[str, dict]
     # By complexity category
     stats_by_complexity: Dict[str, dict]
+    # Backlog wait
+    avg_backlog_wait: float
+    avg_backlog_wait_pct: float              # avg % of lead time spent in backlog
+    backlog_bottlenecks: List[TicketAnalysis] # tickets where wait > 50% of lead time
     # Top performers and concerns
     fastest_relative: List[TicketAnalysis]
     slowest_relative: List[TicketAnalysis]
@@ -104,6 +110,8 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         unresolved = sum(1 for d in defects if not d.resolved)
         raw_vel = (ct / ticket.story_points) if ct and ticket.story_points else None
         adj_pace = (ct / cx.total) if ct and cx.total > 0 else None
+        backlog_wait = (lt - ct) if lt is not None and ct is not None else None
+        backlog_pct = (backlog_wait / lt * 100) if backlog_wait is not None and lt and lt > 0 else None
 
         analyses.append(TicketAnalysis(
             ticket=ticket,
@@ -114,6 +122,8 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
             unresolved_defect_count=unresolved,
             raw_velocity=raw_vel,
             adjusted_pace=adj_pace,
+            backlog_wait_days=round(backlog_wait, 1) if backlog_wait is not None else None,
+            backlog_wait_pct=round(backlog_pct, 1) if backlog_pct is not None else None,
             relative_efficiency=None,  # set after computing average
         ))
 
@@ -132,24 +142,31 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
     adj_paces = [a.adjusted_pace for a in completed if a.adjusted_pace]
     avg_adj_pace = statistics.mean(adj_paces) if adj_paces else 1.0
 
-    # Now rate each ticket
+    # Rate each completed ticket's efficiency
     for a in completed:
         if a.adjusted_pace:
             a.relative_efficiency = _rate_efficiency(
                 a.adjusted_pace, avg_adj_pace
+            )
+        elif a.cycle_time_days is not None:
+            # Ticket has cycle time but zero complexity — can't compute pace,
+            # so fall back to a raw cycle-time comparison against the average
+            avg_ct = statistics.mean(ct for ct in
+                [x.cycle_time_days for x in completed] if ct is not None)
+            a.relative_efficiency = _rate_efficiency(
+                a.cycle_time_days, avg_ct
             )
 
     cycle_times = [a.cycle_time_days for a in completed]
     lead_times = [a.lead_time_days for a in completed if a.lead_time_days]
     raw_vels = [a.raw_velocity for a in completed if a.raw_velocity]
 
-    # Defect stats
+    # Defect stats — all rates use completed ticket count as denominator
     defect_counts = [a.defect_count for a in completed]
     defect_free = sum(1 for d in defect_counts if d == 0)
-    critical_defects = sum(
+    tickets_with_critical = sum(
         1 for a in completed
-        for d in a.ticket.linked_defects
-        if d.severity == "critical"
+        if any(d.severity == "critical" for d in a.ticket.linked_defects)
     )
 
     # Stats by ticket type
@@ -192,6 +209,15 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
     for cat, data in stats_by_complexity.items():
         avg_defects_by_cat[cat] = data["avg_defects"]
 
+    # Backlog wait analysis
+    backlog_waits = [a.backlog_wait_days for a in completed if a.backlog_wait_days is not None]
+    backlog_pcts = [a.backlog_wait_pct for a in completed if a.backlog_wait_pct is not None]
+    backlog_bottlenecks = sorted(
+        [a for a in completed if a.backlog_wait_pct is not None and a.backlog_wait_pct > 50],
+        key=lambda a: a.backlog_wait_pct,
+        reverse=True,
+    )[:5]
+
     # Top performers (lowest adjusted pace = fastest relative to complexity)
     sorted_by_vel = sorted(
         [a for a in completed if a.adjusted_pace],
@@ -204,12 +230,12 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
     complex_tickets = [a for a in completed if a.complexity.total >= 50]
     highest_quality = sorted(complex_tickets, key=lambda a: a.defect_count)[:5]
 
-    # Riskiest: high defect count relative to complexity
-    riskiest = sorted(
-        completed,
-        key=lambda a: a.defect_count / max(a.complexity.total, 1),
-        reverse=True,
-    )[:5]
+    # Riskiest: severity-weighted defect score relative to complexity
+    _severity_weight = {"critical": 4.0, "major": 2.0, "minor": 1.0, "trivial": 0.5}
+    def _weighted_defect_score(a: TicketAnalysis) -> float:
+        return sum(_severity_weight.get(d.severity, 1.0)
+                   for d in a.ticket.linked_defects) / max(a.complexity.total, 1)
+    riskiest = sorted(completed, key=_weighted_defect_score, reverse=True)[:5]
 
     return ProjectStats(
         project_key=project_key,
@@ -229,12 +255,12 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         max_defects=max(defect_counts),
         avg_defects_by_category=avg_defects_by_cat,
         defect_free_rate=round(defect_free / len(completed) * 100, 1),
-        critical_defect_rate=(
-            round(critical_defects / sum(defect_counts) * 100, 1)
-            if sum(defect_counts) > 0 else None
-        ),
+        critical_defect_rate=round(tickets_with_critical / len(completed) * 100, 1),
         avg_raw_velocity=round(statistics.mean(raw_vels), 2) if raw_vels else 0,
         avg_adjusted_pace=round(avg_adj_pace, 3),
+        avg_backlog_wait=round(statistics.mean(backlog_waits), 1) if backlog_waits else 0,
+        avg_backlog_wait_pct=round(statistics.mean(backlog_pcts), 1) if backlog_pcts else 0,
+        backlog_bottlenecks=backlog_bottlenecks,
         stats_by_type=stats_by_type,
         stats_by_complexity=stats_by_complexity,
         fastest_relative=fastest,

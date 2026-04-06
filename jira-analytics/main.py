@@ -100,17 +100,28 @@ def print_project_report(stats: ProjectStats):
     print(f"  Lead Time (created→resolved): avg {stats.avg_lead_time:.1f}d, "
           f"min {stats.min_lead_time:.1f}d, max {stats.max_lead_time:.1f}d")
 
+    # ---- Backlog Wait ----
+    section("BACKLOG WAIT (time from created to started)")
+    print(f"  Avg wait:             {BOLD}{stats.avg_backlog_wait:.1f} days{RESET}")
+    print(f"  Avg wait as % of lead time: {stats.avg_backlog_wait_pct:.0f}%")
+    if stats.backlog_bottlenecks:
+        print(f"\n  {BOLD}Bottlenecks{RESET} — tickets where >50% of lead time was backlog wait:")
+        for a in stats.backlog_bottlenecks:
+            t = a.ticket
+            print(f"    {BOLD}{t.key}{RESET}  {t.summary[:45]}")
+            print(f"      Lead: {a.lead_time_days:.1f}d  Cycle: {a.cycle_time_days:.1f}d  "
+                  f"Wait: {a.backlog_wait_days:.1f}d ({a.backlog_wait_pct:.0f}%)")
+    else:
+        print(f"\n  {GREEN}+ No bottlenecks — all tickets had wait < 50% of lead time.{RESET}")
+
     # ---- Defects ----
     section("DEFECT ANALYSIS")
     print(f"  Total defects found:      {stats.total_defects}")
     print(f"  Avg defects per ticket:   {BOLD}{stats.avg_defects_per_ticket:.2f}{RESET}")
     print(f"  Min / Max:                {stats.min_defects} / {stats.max_defects}")
     print(f"  Defect-free rate:         {GREEN}{stats.defect_free_rate:.1f}%{RESET}")
-    if stats.critical_defect_rate is not None:
-        print(f"  Critical defect rate:     {RED}{stats.critical_defect_rate:.1f}%{RESET} "
-              f"of all defects")
-    else:
-        print(f"  Critical defect rate:     {DIM}N/A (no defects found){RESET}")
+    print(f"  Critical defect rate:     {RED}{stats.critical_defect_rate:.1f}%{RESET} "
+          f"of tickets had a critical defect")
 
     if stats.avg_defects_by_category:
         print(f"\n  {BOLD}Avg defects per ticket by complexity category:{RESET}")
@@ -199,15 +210,13 @@ def print_project_report(stats: ProjectStats):
     for a in stats.highest_quality:
         print_ticket_card(a)
 
-    section("RISK WATCH — Highest defect density relative to complexity")
+    section("RISK WATCH — Highest severity-weighted defect score vs complexity")
     for a in stats.riskiest:
         print_ticket_card(a)
 
     # ---- Summary ----
     section("EXECUTIVE SUMMARY")
-    crit_str = (f"{stats.critical_defect_rate:.0f}% being critical severity"
-                if stats.critical_defect_rate is not None
-                else "no defects found")
+    crit_str = f"{stats.critical_defect_rate:.0f}% of tickets had a critical defect"
     print(f"""
   {BOLD}{stats.project_name} ({stats.project_key}){RESET}
 
