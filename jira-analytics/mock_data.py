@@ -31,7 +31,7 @@ class JiraTicket:
     project: str
     type: str  # "Bug", "Story", "Task", "Epic", "Spike"
     priority: str  # "Critical", "High", "Medium", "Low"
-    status: str  # "Done", "In Progress", "To Do"
+    status: str  # e.g. "Done", "In Progress", "To Do", or custom statuses
     summary: str
     description: str
     story_points: Optional[int]
@@ -651,7 +651,14 @@ def generate_project_tickets(project_key: str, count: int = 30,
 
         # 10% chance ticket is still in progress
         is_done = random.random() < 0.90
-        status = "Done" if is_done else random.choice(["In Progress", "To Do"])
+        # Use varied status names to simulate real Jira customization
+        done_statuses = ["Done", "Closed", "Resolved", "Deployed", "Verified"]
+        active_statuses = ["In Progress", "In Development", "In Review", "Code Review", "In QA"]
+        waiting_statuses = ["To Do", "Backlog", "Ready for Dev", "Selected for Development"]
+        if is_done:
+            status = random.choice(done_statuses)
+        else:
+            status = random.choice(active_statuses + waiting_statuses)
 
         priority_weights = {"Critical": 0.05, "High": 0.25, "Medium": 0.50, "Low": 0.20}
         priority = random.choices(

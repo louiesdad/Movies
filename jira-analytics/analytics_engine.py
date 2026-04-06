@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Dict
 from mock_data import JiraTicket
 from complexity_analyzer import ComplexityBreakdown, analyze_complexity
+from status_mapper import StatusMapper, Phase
 
 
 @dataclass
@@ -104,8 +105,17 @@ def _rate_efficiency(adjusted_pace: float, avg_adjusted: float) -> str:
 
 
 def analyze_project(tickets: List[JiraTicket], project_key: str,
-                     project_name: str) -> ProjectStats:
-    """Run full analysis on a project's tickets."""
+                     project_name: str,
+                     status_mapper: Optional[StatusMapper] = None) -> ProjectStats:
+    """Run full analysis on a project's tickets.
+
+    Args:
+        status_mapper: Optional StatusMapper for custom Jira workflows.
+            If provided, uses intelligent status mapping instead of
+            hardcoded status checks. Pass overrides for org-specific
+            statuses that can't be auto-detected.
+    """
+    mapper = status_mapper or StatusMapper()
 
     # Score complexity for all tickets
     analyses: List[TicketAnalysis] = []
@@ -138,11 +148,11 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
     # Filter to completed tickets for time-based stats
     completed = [a for a in analyses if a.cycle_time_days is not None]
     if not completed:
-        in_progress = sum(1 for a in analyses if a.ticket.status == "In Progress")
-        todo = sum(1 for a in analyses if a.ticket.status == "To Do")
+        active = sum(1 for a in analyses if mapper.is_active(a.ticket.status))
+        waiting = sum(1 for a in analyses if mapper.is_waiting(a.ticket.status))
         raise ValueError(
             f"No completed tickets found for {project_key}. "
-            f"({in_progress} in progress, {todo} in backlog). "
+            f"({active} active, {waiting} in backlog). "
             f"Analysis requires at least one resolved ticket."
         )
 

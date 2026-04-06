@@ -20,6 +20,7 @@ from typing import List
 from mock_data import PROJECTS, generate_project_tickets, JiraTicket
 from complexity_analyzer import analyze_complexity, ComplexityBreakdown
 from analytics_engine import analyze_project, ProjectStats, TicketAnalysis
+from status_mapper import StatusMapper, Phase
 
 
 # ---------------------------------------------------------------------------
@@ -439,7 +440,28 @@ def main():
                          help="Deep-dive on a specific ticket (e.g., PAY-7)")
     parser.add_argument("--tickets", "-n", type=int, default=30,
                          help="Number of mock tickets per project (default: 30)")
+    parser.add_argument("--status-report", action="store_true",
+                         help="Show how custom Jira statuses were mapped to phases")
+    parser.add_argument("--override", action="append", metavar="STATUS=PHASE",
+                         help="Manual status override, e.g. --override 'Baking=review'")
     args = parser.parse_args()
+
+    # Build status mapper with any user overrides
+    overrides = {}
+    if args.override:
+        for ov in args.override:
+            if "=" not in ov:
+                print(f"Invalid override format: {ov} (expected STATUS=PHASE)")
+                sys.exit(1)
+            status, phase_str = ov.split("=", 1)
+            try:
+                phase = Phase(phase_str.lower().strip())
+            except ValueError:
+                valid = ", ".join(p.value for p in Phase if p != Phase.UNKNOWN)
+                print(f"Invalid phase: {phase_str}. Valid: {valid}")
+                sys.exit(1)
+            overrides[status.strip()] = phase
+    mapper = StatusMapper(overrides=overrides if overrides else None)
 
     # Single ticket deep-dive
     if args.ticket:
@@ -474,7 +496,15 @@ def main():
     for proj_key in selected:
         proj = PROJECTS[proj_key]
         tickets = generate_project_tickets(proj_key, count=args.tickets)
-        stats = analyze_project(tickets, proj_key, proj["name"])
+
+        # Show status mapping report if requested
+        if args.status_report:
+            unique_statuses = list(set(t.status for t in tickets))
+            section(f"STATUS MAPPING: {proj_key}")
+            mapper.print_mapping_report(unique_statuses)
+
+        stats = analyze_project(tickets, proj_key, proj["name"],
+                                 status_mapper=mapper)
         print_project_report(stats)
 
 
