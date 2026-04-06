@@ -87,6 +87,7 @@ _RULES: List[Tuple[str, Phase, float, bool]] = [
     ("in staging",          Phase.REVIEW,  0.85, False),
     ("awaiting approval",   Phase.REVIEW,  0.85, False),
     ("pending approval",    Phase.REVIEW,  0.85, False),
+    ("waiting for approval", Phase.REVIEW, 0.85, False),
     ("sign-off",            Phase.REVIEW,  0.85, False),
     ("signoff",             Phase.REVIEW,  0.85, False),
     ("validation",          Phase.REVIEW,  0.80, False),
@@ -192,26 +193,53 @@ class StatusMapper:
                 matched_keyword="(manual override)",
             )
 
-        # Try keyword rules — longer/more specific phrases first
-        best_match: Optional[StatusMapping] = None
-        best_specificity = 0
+        # Two-pass matching:
+        #   Pass 1: find the best non-blocked phase rule (the "what phase")
+        #   Pass 2: check if any blocked modifier also matches (the "is it stuck")
+        # This correctly handles "Blocked in QA" → phase=REVIEW, blocked=True
 
-        for keyword, phase, confidence, is_blocked in _RULES:
-            if keyword in key:
-                # Prefer longer keyword matches (more specific)
-                specificity = len(keyword)
-                if specificity > best_specificity:
-                    best_specificity = specificity
-                    best_match = StatusMapping(
+        best_phase_match: Optional[Tuple[str, Phase, float]] = None
+        best_phase_specificity = 0
+        is_blocked = False
+        blocked_keyword = ""
+
+        for keyword, phase, confidence, blocked in _RULES:
+            if keyword not in key:
+                continue
+            specificity = len(keyword)
+
+            if blocked:
+                # Track that a blocked modifier matched
+                if specificity > len(blocked_keyword):
+                    is_blocked = True
+                    blocked_keyword = keyword
+            else:
+                # Track best non-blocked phase match
+                if specificity > best_phase_specificity:
+                    best_phase_specificity = specificity
+                    best_phase_match = (keyword, phase, confidence)
+
+        if best_phase_match:
+            kw, phase, confidence = best_phase_match
+            return StatusMapping(
+                raw_status=raw_status,
+                phase=phase,
+                confidence=confidence,
+                is_blocked=is_blocked,
+                matched_keyword=kw,
+            )
+
+        # Only blocked modifier matched, no phase — use the blocked rule's phase
+        if is_blocked:
+            for keyword, phase, confidence, blocked in _RULES:
+                if blocked and keyword in key:
+                    return StatusMapping(
                         raw_status=raw_status,
                         phase=phase,
                         confidence=confidence,
-                        is_blocked=is_blocked,
+                        is_blocked=True,
                         matched_keyword=keyword,
                     )
-
-        if best_match:
-            return best_match
 
         # No match — return unknown
         return StatusMapping(

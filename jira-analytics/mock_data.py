@@ -616,7 +616,11 @@ def _generate_defects(ticket: dict, ticket_key: str) -> List[JiraDefect]:
 def generate_project_tickets(project_key: str, count: int = 30,
                               seed: int = 42) -> List[JiraTicket]:
     """Generate a set of realistic mock Jira tickets for a project."""
-    random.seed(seed + hash(project_key))
+    # Use a deterministic hash — Python's built-in hash() is randomized per
+    # process (PYTHONHASHSEED), making results non-reproducible across runs.
+    import hashlib
+    key_hash = int(hashlib.md5(project_key.encode()).hexdigest(), 16) % (2**31)
+    random.seed(seed + key_hash)
     project = PROJECTS[project_key]
     tickets: List[JiraTicket] = []
 

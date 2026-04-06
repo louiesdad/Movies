@@ -482,14 +482,22 @@ def main():
             print(f"Invalid ticket key: {args.ticket}")
             sys.exit(1)
         proj_key = parts[0]
-        ticket_num = int(parts[1])
+        try:
+            ticket_num = int(parts[1])
+        except ValueError:
+            print(f"Invalid ticket number: {parts[1]} (must be an integer)")
+            sys.exit(1)
+        if ticket_num < 1:
+            print(f"Invalid ticket number: {ticket_num} (must be >= 1)")
+            sys.exit(1)
         if proj_key not in PROJECTS:
             print(f"Unknown project: {proj_key}")
             sys.exit(1)
-        tickets = generate_project_tickets(proj_key, count=max(ticket_num, args.tickets))
-        if ticket_num > len(tickets):
-            print(f"Ticket {args.ticket} not found")
+        if ticket_num > args.tickets:
+            print(f"Ticket {args.ticket} not found (project has {args.tickets} tickets, "
+                  f"use --tickets to increase)")
             sys.exit(1)
+        tickets = generate_project_tickets(proj_key, count=args.tickets)
         print_ticket_deepdive(tickets[ticket_num - 1])
         return
 
