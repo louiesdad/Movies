@@ -68,6 +68,8 @@ class ProjectStats:
     stats_by_type: Dict[str, dict]
     # By complexity category
     stats_by_complexity: Dict[str, dict]
+    # By priority
+    stats_by_priority: Dict[str, dict]
     # Backlog wait
     avg_backlog_wait: float
     avg_backlog_wait_pct: float              # avg % of lead time spent in backlog
@@ -110,8 +112,8 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         defects = ticket.linked_defects
         defect_count = len(defects)
         unresolved = sum(1 for d in defects if not d.resolved)
-        raw_vel = (ct / ticket.story_points) if ct and ticket.story_points else None
-        adj_pace = (ct / cx.total) if ct and cx.total > 0 else None
+        raw_vel = (ct / ticket.story_points) if (ct is not None and ticket.story_points) else None
+        adj_pace = (ct / cx.total) if (ct is not None and cx.total > 0) else None
         backlog_wait = (lt - ct) if (lt is not None and ct is not None) else None
         backlog_pct = (backlog_wait / lt * 100) if (backlog_wait is not None and lt is not None and lt > 0) else None
 
@@ -141,12 +143,12 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         )
 
     # Compute average adjusted pace for efficiency rating
-    adj_paces = [a.adjusted_pace for a in completed if a.adjusted_pace]
+    adj_paces = [a.adjusted_pace for a in completed if a.adjusted_pace is not None]
     avg_adj_pace = statistics.mean(adj_paces) if adj_paces else 1.0
 
     # Rate each completed ticket's efficiency
     for a in completed:
-        if a.adjusted_pace:
+        if a.adjusted_pace is not None:
             a.relative_efficiency = _rate_efficiency(
                 a.adjusted_pace, avg_adj_pace
             )
@@ -182,11 +184,12 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         type_cts = [a.cycle_time_days for a in type_items]
         type_defects = [a.defect_count for a in type_items]
         type_adj = [a.adjusted_pace for a in type_items
-                     if a.adjusted_pace]
+                     if a.adjusted_pace is not None]
         type_complexities = [a.complexity.total for a in type_items]
         stats_by_type[ttype] = {
             "count": len(type_items),
             "avg_cycle_time": round(statistics.mean(type_cts), 1),
+            "median_cycle_time": round(statistics.median(type_cts), 1),
             "cycle_time_stddev": round(statistics.stdev(type_cts), 1) if len(type_cts) > 1 else 0.0,
             "avg_defects": round(statistics.mean(type_defects), 2),
             "avg_complexity": round(statistics.mean(type_complexities), 1),
@@ -202,7 +205,7 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         cat_cts = [a.cycle_time_days for a in cat_items]
         cat_defects = [a.defect_count for a in cat_items]
         cat_adj = [a.adjusted_pace for a in cat_items
-                    if a.adjusted_pace]
+                    if a.adjusted_pace is not None]
         stats_by_complexity[cat] = {
             "count": len(cat_items),
             "avg_cycle_time": round(statistics.mean(cat_cts), 1),
@@ -210,6 +213,26 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
             "cycle_time_stddev": round(statistics.stdev(cat_cts), 1) if len(cat_cts) > 1 else 0.0,
             "avg_defects": round(statistics.mean(cat_defects), 2),
             "avg_adjusted_pace": round(statistics.mean(cat_adj), 3) if cat_adj else None,
+        }
+
+    # Stats by priority
+    stats_by_priority: Dict[str, dict] = {}
+    for prio in ["Critical", "High", "Medium", "Low"]:
+        prio_items = [a for a in completed if a.ticket.priority == prio]
+        if not prio_items:
+            continue
+        prio_cts = [a.cycle_time_days for a in prio_items]
+        prio_defects = [a.defect_count for a in prio_items]
+        prio_adj = [a.adjusted_pace for a in prio_items if a.adjusted_pace is not None]
+        prio_complexities = [a.complexity.total for a in prio_items]
+        stats_by_priority[prio] = {
+            "count": len(prio_items),
+            "avg_cycle_time": round(statistics.mean(prio_cts), 1),
+            "median_cycle_time": round(statistics.median(prio_cts), 1),
+            "cycle_time_stddev": round(statistics.stdev(prio_cts), 1) if len(prio_cts) > 1 else 0.0,
+            "avg_defects": round(statistics.mean(prio_defects), 2),
+            "avg_complexity": round(statistics.mean(prio_complexities), 1),
+            "avg_adjusted_pace": round(statistics.mean(prio_adj), 3) if prio_adj else None,
         }
 
     # Average defects by complexity category
@@ -228,7 +251,7 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
 
     # Top performers (lowest adjusted pace = fastest relative to complexity)
     sorted_by_vel = sorted(
-        [a for a in completed if a.adjusted_pace],
+        [a for a in completed if a.adjusted_pace is not None],
         key=lambda a: a.adjusted_pace,
     )
     fastest = sorted_by_vel[:5]
@@ -273,6 +296,7 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         backlog_bottlenecks=backlog_bottlenecks,
         stats_by_type=stats_by_type,
         stats_by_complexity=stats_by_complexity,
+        stats_by_priority=stats_by_priority,
         fastest_relative=fastest,
         slowest_relative=slowest,
         highest_quality=highest_quality,

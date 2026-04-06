@@ -63,9 +63,9 @@ def print_ticket_card(analysis: TicketAnalysis, show_breakdown: bool = False):
     eff = analysis.relative_efficiency or "N/A"
     color = EFFICIENCY_COLORS.get(eff, RESET)
 
-    ct_str = f"{analysis.cycle_time_days:.1f}d" if analysis.cycle_time_days else "N/A"
+    ct_str = f"{analysis.cycle_time_days:.1f}d" if analysis.cycle_time_days is not None else "N/A"
     adj_str = (f"{analysis.adjusted_pace:.3f}"
-               if analysis.adjusted_pace else "N/A")
+               if analysis.adjusted_pace is not None else "N/A")
 
     print(f"  {BOLD}{t.key}{RESET}  {t.summary[:55]}")
     print(f"    Type: {t.type:<8}  Points: {t.story_points or '-':<3} "
@@ -152,14 +152,14 @@ def print_project_report(stats: ProjectStats):
 
     # ---- By Type ----
     section("BREAKDOWN BY TICKET TYPE")
-    print(f"  {'Type':<10} {'Count':>5} {'Avg Cycle':>10} {'StdDev':>7} {'Avg Defects':>12} "
-          f"{'Avg Complex':>12} {'Adj Pace':>10}")
-    print(f"  {'─'*10} {'─'*5} {'─'*10} {'─'*7} {'─'*12} {'─'*12} {'─'*10}")
+    print(f"  {'Type':<10} {'Count':>5} {'Avg Cycle':>10} {'Median':>7} {'StdDev':>7} "
+          f"{'Avg Defects':>12} {'Adj Pace':>10}")
+    print(f"  {'─'*10} {'─'*5} {'─'*10} {'─'*7} {'─'*7} {'─'*12} {'─'*10}")
     for ttype, data in sorted(stats.stats_by_type.items()):
         adj = f"{data['avg_adjusted_pace']:.3f}" if data['avg_adjusted_pace'] else "N/A"
         print(f"  {ttype:<10} {data['count']:>5} {data['avg_cycle_time']:>9.1f}d "
-              f"{data['cycle_time_stddev']:>6.1f}d"
-              f"{data['avg_defects']:>12.2f} {data['avg_complexity']:>12.1f} {adj:>10}")
+              f"{data['median_cycle_time']:>6.1f}d {data['cycle_time_stddev']:>6.1f}d"
+              f"{data['avg_defects']:>12.2f} {adj:>10}")
 
     # ---- By Complexity Category ----
     section("BREAKDOWN BY COMPLEXITY CATEGORY")
@@ -174,6 +174,21 @@ def print_project_report(stats: ProjectStats):
         print(f"  {cat:<16} {data['count']:>5} {data['avg_cycle_time']:>9.1f}d "
               f"{data['cycle_time_stddev']:>6.1f}d"
               f"{data['median_cycle_time']:>9.1f}d {data['avg_defects']:>12.2f} {adj:>10}")
+
+    # ---- By Priority ----
+    if stats.stats_by_priority:
+        section("BREAKDOWN BY PRIORITY")
+        print(f"  {'Priority':<10} {'Count':>5} {'Avg Cycle':>10} {'Median':>7} {'StdDev':>7} "
+              f"{'Avg Defects':>12} {'Adj Pace':>10}")
+        print(f"  {'─'*10} {'─'*5} {'─'*10} {'─'*7} {'─'*7} {'─'*12} {'─'*10}")
+        for prio in ["Critical", "High", "Medium", "Low"]:
+            if prio not in stats.stats_by_priority:
+                continue
+            data = stats.stats_by_priority[prio]
+            adj = f"{data['avg_adjusted_pace']:.3f}" if data['avg_adjusted_pace'] else "N/A"
+            print(f"  {prio:<10} {data['count']:>5} {data['avg_cycle_time']:>9.1f}d "
+                  f"{data['median_cycle_time']:>6.1f}d {data['cycle_time_stddev']:>6.1f}d"
+                  f"{data['avg_defects']:>12.2f} {adj:>10}")
 
     # ---- Key insight ----
     section("KEY INSIGHT: RELATIVE PERFORMANCE")
@@ -273,8 +288,8 @@ def print_ticket_deepdive(ticket: JiraTicket):
     print(f"  Resolved:  {ticket.resolved.strftime('%Y-%m-%d') if ticket.resolved else 'N/A'}")
     ct = ticket.cycle_time_days
     lt = ticket.lead_time_days
-    print(f"  Cycle time: {ct:.1f} days" if ct else "  Cycle time: N/A")
-    print(f"  Lead time:  {lt:.1f} days" if lt else "  Lead time:  N/A")
+    print(f"  Cycle time: {ct:.1f} days" if ct is not None else "  Cycle time: N/A")
+    print(f"  Lead time:  {lt:.1f} days" if lt is not None else "  Lead time:  N/A")
 
     section("COMPLEXITY ANALYSIS")
     print(f"  {BOLD}Overall score: {cx.total:.0f}/100 — {cx.category}{RESET}\n")
@@ -313,7 +328,7 @@ def print_ticket_deepdive(ticket: JiraTicket):
             status = f"{GREEN}Resolved ({d.resolution_days:.1f}d){RESET}" if d.resolved else f"{RED}Open{RESET}"
             print(f"  {d.key}  [{d.severity.upper()}]  {status}")
 
-    if ct and cx.total > 0:
+    if ct is not None and cx.total > 0:
         adj_pace = ct / cx.total
         section("COMPLEXITY-ADJUSTED PACE")
         print(f"  Adjusted pace: {adj_pace:.3f} days per complexity unit (lower = faster)")
