@@ -204,13 +204,13 @@ def print_project_report(stats: ProjectStats):
     # ---- Sprint Trend ----
     if stats.sprint_trend and len(stats.sprint_trend) > 1:
         section("SPRINT VELOCITY TREND")
-        print(f"  {'Sprint':<12} {'Tickets':>7} {'Avg Cycle':>10} {'Avg Pace':>10} "
+        print(f"  {'Sprint':<12} {'Tickets':>7} {'Points':>7} {'Avg Cycle':>10} {'Avg Pace':>10} "
               f"{'Avg Defects':>12}")
-        print(f"  {'─'*12} {'─'*7} {'─'*10} {'─'*10} {'─'*12}")
+        print(f"  {'─'*12} {'─'*7} {'─'*7} {'─'*10} {'─'*10} {'─'*12}")
         for sp in stats.sprint_trend:
             pace = f"{sp['avg_adjusted_pace']:.3f}" if sp['avg_adjusted_pace'] else "N/A"
-            print(f"  {sp['sprint']:<12} {sp['count']:>7} {sp['avg_cycle_time']:>9.1f}d "
-                  f"{pace:>10} {sp['avg_defects']:>12.2f}")
+            print(f"  {sp['sprint']:<12} {sp['count']:>7} {sp['total_points']:>7} "
+                  f"{sp['avg_cycle_time']:>9.1f}d {pace:>10} {sp['avg_defects']:>12.2f}")
         # Show trend direction
         first = stats.sprint_trend[0]
         last = stats.sprint_trend[-1]
@@ -323,6 +323,11 @@ def print_ticket_deepdive(ticket: JiraTicket):
     lt = ticket.lead_time_days
     print(f"  Cycle time: {ct:.1f} days" if ct is not None else "  Cycle time: N/A")
     print(f"  Lead time:  {lt:.1f} days" if lt is not None else "  Lead time:  N/A")
+    if lt is not None and ct is not None and lt > 0:
+        wait = lt - ct
+        wait_pct = wait / lt * 100
+        color = RED if wait_pct > 50 else (YELLOW if wait_pct > 30 else GREEN)
+        print(f"  Backlog wait:{wait:.1f} days ({color}{wait_pct:.0f}%{RESET} of lead time)")
 
     section("COMPLEXITY ANALYSIS")
     print(f"  {BOLD}Overall score: {cx.total:.0f}/100 — {cx.category}{RESET}\n")

@@ -190,10 +190,19 @@ def _score_risk(ticket: JiraTicket) -> float:
     Uses phrase-level matching with context-aware weights to reduce false
     positives. High-signal phrases like "breaking change" score more than
     ambiguous words like "security".
+
+    For Bug tickets, excludes phrases already scored by _score_type's
+    hard_bug_keywords to prevent double-counting.
     """
+    # Phrases already scored in _score_type for Bugs
+    _BUG_OVERLAP = {"race condition"}
+
     combined_text = (ticket.summary + " " + ticket.description).lower()
-    weighted_score = sum(weight for phrase, weight in _RISK_PHRASES
-                         if phrase in combined_text)
+    weighted_score = sum(
+        weight for phrase, weight in _RISK_PHRASES
+        if phrase in combined_text
+        and not (ticket.type == "Bug" and phrase in _BUG_OVERLAP)
+    )
     return min(weighted_score, 15.0)
 
 

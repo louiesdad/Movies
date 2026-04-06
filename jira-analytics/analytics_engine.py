@@ -266,9 +266,11 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         sp_cts = [a.cycle_time_days for a in sp_items]
         sp_paces = [a.adjusted_pace for a in sp_items if a.adjusted_pace is not None]
         sp_defects = [a.defect_count for a in sp_items]
+        sp_points = sum(a.ticket.story_points or 0 for a in sp_items)
         sprint_trend.append({
             "sprint": sprint,
             "count": len(sp_items),
+            "total_points": sp_points,
             "avg_cycle_time": round(statistics.mean(sp_cts), 1),
             "avg_adjusted_pace": round(statistics.mean(sp_paces), 3) if sp_paces else None,
             "avg_defects": round(statistics.mean(sp_defects), 2),
@@ -296,11 +298,13 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
     highest_quality = sorted(complex_tickets, key=lambda a: a.defect_count)[:5]
 
     # Riskiest: severity-weighted defect score relative to complexity
+    # Only includes tickets that actually have defects
     _severity_weight = {"critical": 4.0, "major": 2.0, "minor": 1.0, "trivial": 0.5}
     def _weighted_defect_score(a: TicketAnalysis) -> float:
         return sum(_severity_weight.get(d.severity, 1.0)
                    for d in a.ticket.linked_defects) / max(a.complexity.total, 1)
-    riskiest = sorted(completed, key=_weighted_defect_score, reverse=True)[:5]
+    with_defects = [a for a in completed if a.defect_count > 0]
+    riskiest = sorted(with_defects, key=_weighted_defect_score, reverse=True)[:5]
 
     return ProjectStats(
         project_key=project_key,
