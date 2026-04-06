@@ -46,6 +46,7 @@ class ProjectStats:
     min_cycle_time: float
     max_cycle_time: float
     median_cycle_time: float
+    cycle_time_stddev: float
     # Lead time
     avg_lead_time: float
     min_lead_time: float
@@ -56,6 +57,7 @@ class ProjectStats:
     min_defects: int
     max_defects: int
     avg_defects_by_category: Dict[str, float]  # complexity category -> avg defects
+    defect_severity_breakdown: Dict[str, int]  # severity -> total count
     # Quality
     defect_free_rate: float   # % of tickets with zero defects
     critical_defect_rate: float  # % of completed tickets that had a critical defect
@@ -110,8 +112,8 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         unresolved = sum(1 for d in defects if not d.resolved)
         raw_vel = (ct / ticket.story_points) if ct and ticket.story_points else None
         adj_pace = (ct / cx.total) if ct and cx.total > 0 else None
-        backlog_wait = (lt - ct) if lt is not None and ct is not None else None
-        backlog_pct = (backlog_wait / lt * 100) if backlog_wait is not None and lt and lt > 0 else None
+        backlog_wait = (lt - ct) if (lt is not None and ct is not None) else None
+        backlog_pct = (backlog_wait / lt * 100) if (backlog_wait is not None and lt is not None and lt > 0) else None
 
         analyses.append(TicketAnalysis(
             ticket=ticket,
@@ -158,8 +160,8 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
             )
 
     cycle_times = [a.cycle_time_days for a in completed]
-    lead_times = [a.lead_time_days for a in completed if a.lead_time_days]
-    raw_vels = [a.raw_velocity for a in completed if a.raw_velocity]
+    lead_times = [a.lead_time_days for a in completed if a.lead_time_days is not None]
+    raw_vels = [a.raw_velocity for a in completed if a.raw_velocity is not None]
 
     # Defect stats — all rates use completed ticket count as denominator
     defect_counts = [a.defect_count for a in completed]
@@ -168,6 +170,10 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         1 for a in completed
         if any(d.severity == "critical" for d in a.ticket.linked_defects)
     )
+    severity_breakdown = {"critical": 0, "major": 0, "minor": 0, "trivial": 0}
+    for a in completed:
+        for d in a.ticket.linked_defects:
+            severity_breakdown[d.severity] = severity_breakdown.get(d.severity, 0) + 1
 
     # Stats by ticket type
     stats_by_type: Dict[str, dict] = {}
@@ -181,6 +187,7 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         stats_by_type[ttype] = {
             "count": len(type_items),
             "avg_cycle_time": round(statistics.mean(type_cts), 1),
+            "cycle_time_stddev": round(statistics.stdev(type_cts), 1) if len(type_cts) > 1 else 0.0,
             "avg_defects": round(statistics.mean(type_defects), 2),
             "avg_complexity": round(statistics.mean(type_complexities), 1),
             "avg_adjusted_pace": round(statistics.mean(type_adj), 3) if type_adj else None,
@@ -200,6 +207,7 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
             "count": len(cat_items),
             "avg_cycle_time": round(statistics.mean(cat_cts), 1),
             "median_cycle_time": round(statistics.median(cat_cts), 1),
+            "cycle_time_stddev": round(statistics.stdev(cat_cts), 1) if len(cat_cts) > 1 else 0.0,
             "avg_defects": round(statistics.mean(cat_defects), 2),
             "avg_adjusted_pace": round(statistics.mean(cat_adj), 3) if cat_adj else None,
         }
@@ -246,6 +254,7 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         min_cycle_time=round(min(cycle_times), 1),
         max_cycle_time=round(max(cycle_times), 1),
         median_cycle_time=round(statistics.median(cycle_times), 1),
+        cycle_time_stddev=round(statistics.stdev(cycle_times), 1) if len(cycle_times) > 1 else 0.0,
         avg_lead_time=round(statistics.mean(lead_times), 1) if lead_times else 0,
         min_lead_time=round(min(lead_times), 1) if lead_times else 0,
         max_lead_time=round(max(lead_times), 1) if lead_times else 0,
@@ -254,6 +263,7 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         min_defects=min(defect_counts),
         max_defects=max(defect_counts),
         avg_defects_by_category=avg_defects_by_cat,
+        defect_severity_breakdown=severity_breakdown,
         defect_free_rate=round(defect_free / len(completed) * 100, 1),
         critical_defect_rate=round(tickets_with_critical / len(completed) * 100, 1),
         avg_raw_velocity=round(statistics.mean(raw_vels), 2) if raw_vels else 0,

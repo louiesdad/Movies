@@ -93,7 +93,8 @@ def print_project_report(stats: ProjectStats):
 
     # ---- Cycle Time ----
     section("CYCLE TIME (time from start to resolution)")
-    print(f"  Average:  {BOLD}{stats.avg_cycle_time:.1f} days{RESET}")
+    print(f"  Average:  {BOLD}{stats.avg_cycle_time:.1f} days{RESET}  "
+          f"(stddev: {stats.cycle_time_stddev:.1f}d)")
     print(f"  Median:   {stats.median_cycle_time:.1f} days")
     print(f"  Min:      {stats.min_cycle_time:.1f} days")
     print(f"  Max:      {stats.max_cycle_time:.1f} days")
@@ -123,6 +124,16 @@ def print_project_report(stats: ProjectStats):
     print(f"  Critical defect rate:     {RED}{stats.critical_defect_rate:.1f}%{RESET} "
           f"of tickets had a critical defect")
 
+    if stats.total_defects > 0:
+        sb = stats.defect_severity_breakdown
+        print(f"\n  {BOLD}Defect severity distribution:{RESET}")
+        max_sev = max(sb.values()) if sb else 1
+        for sev in ["critical", "major", "minor", "trivial"]:
+            count = sb.get(sev, 0)
+            bar = hbar(count, max_sev, 20)
+            color = RED if sev == "critical" else (YELLOW if sev == "major" else RESET)
+            print(f"    {color}{sev:<10}{RESET} {bar} {count}")
+
     if stats.avg_defects_by_category:
         print(f"\n  {BOLD}Avg defects per ticket by complexity category:{RESET}")
         max_dd = max(stats.avg_defects_by_category.values()) if stats.avg_defects_by_category else 1
@@ -141,25 +152,27 @@ def print_project_report(stats: ProjectStats):
 
     # ---- By Type ----
     section("BREAKDOWN BY TICKET TYPE")
-    print(f"  {'Type':<10} {'Count':>5} {'Avg Cycle':>10} {'Avg Defects':>12} "
+    print(f"  {'Type':<10} {'Count':>5} {'Avg Cycle':>10} {'StdDev':>7} {'Avg Defects':>12} "
           f"{'Avg Complex':>12} {'Adj Pace':>10}")
-    print(f"  {'─'*10} {'─'*5} {'─'*10} {'─'*12} {'─'*12} {'─'*10}")
+    print(f"  {'─'*10} {'─'*5} {'─'*10} {'─'*7} {'─'*12} {'─'*12} {'─'*10}")
     for ttype, data in sorted(stats.stats_by_type.items()):
         adj = f"{data['avg_adjusted_pace']:.3f}" if data['avg_adjusted_pace'] else "N/A"
         print(f"  {ttype:<10} {data['count']:>5} {data['avg_cycle_time']:>9.1f}d "
+              f"{data['cycle_time_stddev']:>6.1f}d"
               f"{data['avg_defects']:>12.2f} {data['avg_complexity']:>12.1f} {adj:>10}")
 
     # ---- By Complexity Category ----
     section("BREAKDOWN BY COMPLEXITY CATEGORY")
-    print(f"  {'Category':<16} {'Count':>5} {'Avg Cycle':>10} {'Med Cycle':>10} "
+    print(f"  {'Category':<16} {'Count':>5} {'Avg Cycle':>10} {'StdDev':>7} {'Med Cycle':>10} "
           f"{'Avg Defects':>12} {'Adj Pace':>10}")
-    print(f"  {'─'*16} {'─'*5} {'─'*10} {'─'*10} {'─'*12} {'─'*10}")
+    print(f"  {'─'*16} {'─'*5} {'─'*10} {'─'*7} {'─'*10} {'─'*12} {'─'*10}")
     for cat in ["Trivial", "Simple", "Moderate", "Complex", "Highly Complex"]:
         if cat not in stats.stats_by_complexity:
             continue
         data = stats.stats_by_complexity[cat]
         adj = f"{data['avg_adjusted_pace']:.3f}" if data['avg_adjusted_pace'] else "N/A"
         print(f"  {cat:<16} {data['count']:>5} {data['avg_cycle_time']:>9.1f}d "
+              f"{data['cycle_time_stddev']:>6.1f}d"
               f"{data['median_cycle_time']:>9.1f}d {data['avg_defects']:>12.2f} {adj:>10}")
 
     # ---- Key insight ----
