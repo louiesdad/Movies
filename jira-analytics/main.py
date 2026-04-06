@@ -125,6 +125,11 @@ def print_project_report(stats: ProjectStats):
     print(f"  Avg defects per ticket:   {BOLD}{stats.avg_defects_per_ticket:.2f}{RESET}")
     print(f"  Min / Max:                {stats.min_defects} / {stats.max_defects}")
     print(f"  Defect-free rate:         {GREEN}{stats.defect_free_rate:.1f}%{RESET}")
+    if stats.unresolved_defects > 0:
+        print(f"  Unresolved defects:       {RED}{stats.unresolved_defects}{RESET} "
+              f"({stats.unresolved_defects}/{stats.total_defects} still open)")
+    else:
+        print(f"  Unresolved defects:       {GREEN}0{RESET}")
     print(f"  Critical defect rate:     {RED}{stats.critical_defect_rate:.1f}%{RESET} "
           f"of tickets had a critical defect")
 
@@ -196,6 +201,28 @@ def print_project_report(stats: ProjectStats):
                   f"{data['defect_free_rate']:>8.0f}% {data['critical_defect_rate']:>5.0f}%"
                   f" {adj:>10}")
 
+    # ---- Sprint Trend ----
+    if stats.sprint_trend and len(stats.sprint_trend) > 1:
+        section("SPRINT VELOCITY TREND")
+        print(f"  {'Sprint':<12} {'Tickets':>7} {'Avg Cycle':>10} {'Avg Pace':>10} "
+              f"{'Avg Defects':>12}")
+        print(f"  {'─'*12} {'─'*7} {'─'*10} {'─'*10} {'─'*12}")
+        for sp in stats.sprint_trend:
+            pace = f"{sp['avg_adjusted_pace']:.3f}" if sp['avg_adjusted_pace'] else "N/A"
+            print(f"  {sp['sprint']:<12} {sp['count']:>7} {sp['avg_cycle_time']:>9.1f}d "
+                  f"{pace:>10} {sp['avg_defects']:>12.2f}")
+        # Show trend direction
+        first = stats.sprint_trend[0]
+        last = stats.sprint_trend[-1]
+        if first['avg_adjusted_pace'] and last['avg_adjusted_pace']:
+            change = (last['avg_adjusted_pace'] - first['avg_adjusted_pace']) / first['avg_adjusted_pace'] * 100
+            if change < -10:
+                print(f"\n  {GREEN}+ Pace improved {abs(change):.0f}% from {first['sprint']} to {last['sprint']}{RESET}")
+            elif change > 10:
+                print(f"\n  {RED}- Pace degraded {change:.0f}% from {first['sprint']} to {last['sprint']}{RESET}")
+            else:
+                print(f"\n  {YELLOW}~ Pace stable ({change:+.0f}%) across sprints{RESET}")
+
     # ---- Key insight ----
     section("KEY INSIGHT: RELATIVE PERFORMANCE")
     print(f"  {BOLD}Complexity-adjusted pace reveals true throughput.{RESET}\n")
@@ -220,7 +247,7 @@ def print_project_report(stats: ProjectStats):
               f"Cycle: {ss.cycle_time_days:.1f}d  "
               f"Adj.Pace: {ss.adjusted_pace:.3f}")
         print()
-        if cf.adjusted_pace and ss.adjusted_pace:
+        if cf.adjusted_pace is not None and ss.adjusted_pace is not None:
             ratio = ss.adjusted_pace / cf.adjusted_pace
             print(f"    {BOLD}The complex ticket was {ratio:.1f}x more efficient "
                   f"per unit of complexity.{RESET}")
@@ -338,7 +365,10 @@ def print_ticket_deepdive(ticket: JiraTicket):
         adj_pace = ct / cx.total
         section("COMPLEXITY-ADJUSTED PACE")
         print(f"  Adjusted pace: {adj_pace:.3f} days per complexity unit (lower = faster)")
-        print(f"  Raw pace:      {ct / (ticket.story_points or 1):.2f} days per story point")
+        if ticket.story_points is not None and ticket.story_points > 0:
+            print(f"  Raw pace:      {ct / ticket.story_points:.2f} days per story point")
+        else:
+            print(f"  Raw pace:      N/A (no story points assigned)")
         print()
         if adj_pace < 0.15:
             print(f"  {GREEN}+ This ticket was executed efficiently relative to its complexity.{RESET}")

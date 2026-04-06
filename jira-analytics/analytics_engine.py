@@ -58,6 +58,7 @@ class ProjectStats:
     max_defects: int
     avg_defects_by_category: Dict[str, float]  # complexity category -> avg defects
     defect_severity_breakdown: Dict[str, int]  # severity -> total count
+    unresolved_defects: int
     # Quality
     defect_free_rate: float   # % of tickets with zero defects
     critical_defect_rate: float  # % of completed tickets that had a critical defect
@@ -70,6 +71,8 @@ class ProjectStats:
     stats_by_complexity: Dict[str, dict]
     # By priority
     stats_by_priority: Dict[str, dict]
+    # Sprint velocity trend
+    sprint_trend: List[dict]  # [{sprint, count, avg_cycle, avg_pace, avg_defects}]
     # Backlog wait
     avg_backlog_wait: float
     avg_backlog_wait_pct: float              # avg % of lead time spent in backlog
@@ -174,7 +177,9 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         if any(d.severity == "critical" for d in a.ticket.linked_defects)
     )
     severity_breakdown = {"critical": 0, "major": 0, "minor": 0, "trivial": 0}
+    total_unresolved = 0
     for a in completed:
+        total_unresolved += a.unresolved_defect_count
         for d in a.ticket.linked_defects:
             severity_breakdown[d.severity] = severity_breakdown.get(d.severity, 0) + 1
 
@@ -251,6 +256,24 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
     for cat, data in stats_by_complexity.items():
         avg_defects_by_cat[cat] = data["avg_defects"]
 
+    # Sprint velocity trend
+    sprint_names = sorted(set(
+        a.ticket.sprint for a in completed if a.ticket.sprint is not None
+    ))
+    sprint_trend: List[dict] = []
+    for sprint in sprint_names:
+        sp_items = [a for a in completed if a.ticket.sprint == sprint]
+        sp_cts = [a.cycle_time_days for a in sp_items]
+        sp_paces = [a.adjusted_pace for a in sp_items if a.adjusted_pace is not None]
+        sp_defects = [a.defect_count for a in sp_items]
+        sprint_trend.append({
+            "sprint": sprint,
+            "count": len(sp_items),
+            "avg_cycle_time": round(statistics.mean(sp_cts), 1),
+            "avg_adjusted_pace": round(statistics.mean(sp_paces), 3) if sp_paces else None,
+            "avg_defects": round(statistics.mean(sp_defects), 2),
+        })
+
     # Backlog wait analysis
     backlog_waits = [a.backlog_wait_days for a in completed if a.backlog_wait_days is not None]
     backlog_pcts = [a.backlog_wait_pct for a in completed if a.backlog_wait_pct is not None]
@@ -298,10 +321,12 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         max_defects=max(defect_counts),
         avg_defects_by_category=avg_defects_by_cat,
         defect_severity_breakdown=severity_breakdown,
+        unresolved_defects=total_unresolved,
         defect_free_rate=round(defect_free / len(completed) * 100, 1),
         critical_defect_rate=round(tickets_with_critical / len(completed) * 100, 1),
         avg_raw_velocity=round(statistics.mean(raw_vels), 2) if raw_vels else 0,
         avg_adjusted_pace=round(avg_adj_pace, 3),
+        sprint_trend=sprint_trend,
         avg_backlog_wait=round(statistics.mean(backlog_waits), 1) if backlog_waits else 0,
         avg_backlog_wait_pct=round(statistics.mean(backlog_pcts), 1) if backlog_pcts else 0,
         backlog_is_primary_constraint=(
