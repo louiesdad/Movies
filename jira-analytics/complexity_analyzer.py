@@ -5,6 +5,15 @@ This is the "judgment" layer. It reads ticket content (description richness,
 acceptance criteria count, subtasks, dependencies, type, labels) and produces
 a normalized complexity score (0–100) that represents how inherently difficult
 the work is — independent of how long it actually took.
+
+Weight distribution (rebalanced to avoid over-weighting verbose descriptions):
+  - Description richness:  0–15  (structural complexity of the spec)
+  - Requirements depth:    0–15  (acceptance criteria + subtask burden)
+  - Integration scope:     0–15  (dependencies + components touched)
+  - Type complexity:       0–15  (inherent difficulty by ticket type)
+  - Team estimate (pts):   0–25  (the team's own sizing — strongest signal)
+  - Risk indicators:       0–15  (contextual keyword phrases)
+  Total cap: 100
 """
 
 from dataclasses import dataclass
@@ -15,11 +24,11 @@ from mock_data import JiraTicket
 @dataclass
 class ComplexityBreakdown:
     """Detailed breakdown of what contributed to the complexity score."""
-    description_score: float     # 0–20: richness of description
-    requirements_score: float    # 0–20: acceptance criteria + subtask count
+    description_score: float     # 0–15: richness of description
+    requirements_score: float    # 0–15: acceptance criteria + subtask count
     integration_score: float     # 0–15: dependencies + components
     type_score: float            # 0–15: inherent complexity of ticket type
-    scope_score: float           # 0–15: story points as a proxy for team estimate
+    scope_score: float           # 0–25: story points as a proxy for team estimate
     risk_score: float            # 0–15: keywords indicating risk/uncertainty
     total: float                 # 0–100
 
@@ -38,55 +47,55 @@ class ComplexityBreakdown:
 
 
 def _score_description(ticket: JiraTicket) -> float:
-    """Score based on description length, structure, and richness."""
+    """Score based on description length, structure, and richness (max 15)."""
     desc = ticket.description
     score = 0.0
 
-    # Length (longer descriptions usually mean more requirements)
+    # Length — capped lower than before to reduce verbosity bias
     word_count = len(desc.split())
     if word_count < 20:
-        score += 2
+        score += 1
     elif word_count < 50:
-        score += 5
+        score += 3
     elif word_count < 100:
-        score += 10
+        score += 6
     elif word_count < 200:
-        score += 14
+        score += 9
     else:
-        score += 18
+        score += 11
 
-    # Structure markers (headers, lists, code blocks)
+    # Count unique structural marker *types* present (not occurrences)
     structure_markers = ["##", "- ", "* ", "```", "1.", "2.", "3."]
-    marker_count = sum(1 for m in structure_markers if m in desc)
-    score += min(marker_count * 0.5, 2.0)
+    unique_marker_types = sum(1 for m in structure_markers if m in desc)
+    score += min(unique_marker_types * 0.7, 4.0)
 
-    return min(score, 20.0)
+    return min(score, 15.0)
 
 
 def _score_requirements(ticket: JiraTicket) -> float:
-    """Score based on acceptance criteria and subtask count."""
+    """Score based on acceptance criteria and subtask count (max 15)."""
     score = 0.0
 
     ac_count = len(ticket.acceptance_criteria)
     if ac_count <= 1:
-        score += 2
+        score += 1
     elif ac_count <= 3:
-        score += 6
+        score += 4
     elif ac_count <= 5:
-        score += 10
+        score += 7
     elif ac_count <= 8:
-        score += 14
+        score += 10
     else:
-        score += 18
+        score += 13
 
     subtask_count = len(ticket.subtasks)
-    score += min(subtask_count * 0.5, 2.0)
+    score += min(subtask_count * 0.4, 2.0)
 
-    return min(score, 20.0)
+    return min(score, 15.0)
 
 
 def _score_integration(ticket: JiraTicket) -> float:
-    """Score based on dependencies and component breadth."""
+    """Score based on dependencies and component breadth (max 15)."""
     score = 0.0
 
     dep_count = len(ticket.dependencies)
@@ -99,7 +108,7 @@ def _score_integration(ticket: JiraTicket) -> float:
 
 
 def _score_type(ticket: JiraTicket) -> float:
-    """Different ticket types carry inherent complexity."""
+    """Different ticket types carry inherent complexity (max 15)."""
     type_scores = {
         "Bug": 5.0,       # Usually focused fix
         "Task": 4.0,      # Routine work
@@ -109,7 +118,7 @@ def _score_type(ticket: JiraTicket) -> float:
     }
     base = type_scores.get(ticket.type, 7.0)
 
-    # Bugs with words like "race condition", "memory leak" are harder
+    # Bugs with specific technical challenges are harder
     hard_bug_keywords = ["race condition", "concurrency", "memory leak",
                           "deadlock", "corruption", "intermittent", "flaky"]
     if ticket.type == "Bug":
@@ -121,38 +130,71 @@ def _score_type(ticket: JiraTicket) -> float:
 
 
 def _score_scope(ticket: JiraTicket) -> float:
-    """Use story points as the team's own complexity estimate."""
+    """Use story points as the team's own complexity estimate (max 25).
+
+    This is the strongest signal — the team already evaluated complexity
+    during planning. We use a logarithmic-ish curve so that large epics
+    (21+ points) get meaningfully more weight than small tasks.
+    """
     points = ticket.story_points or 1
     if points <= 1:
-        return 2.0
+        return 3.0
     elif points <= 2:
-        return 4.0
-    elif points <= 3:
         return 6.0
+    elif points <= 3:
+        return 9.0
     elif points <= 5:
-        return 8.0
+        return 13.0
     elif points <= 8:
-        return 10.0
+        return 16.0
     elif points <= 13:
-        return 12.0
+        return 20.0
+    elif points <= 21:
+        return 23.0
     else:
-        return 15.0
+        return 25.0
+
+
+# Risk phrases scored by context — each is a (phrase, weight) pair.
+# Higher weight for phrases that unambiguously signal difficulty.
+_RISK_PHRASES = [
+    # High-signal risk (weight 3.0)
+    ("breaking change", 3.0),
+    ("data loss", 3.0),
+    ("race condition", 3.0),
+    ("backwardcompat", 3.0),
+    # Medium-signal risk (weight 2.0)
+    ("migrate", 2.0),         # covers "migration", "migrate from"
+    ("deprecat", 2.0),        # covers "deprecated", "deprecation"
+    ("rollback", 2.0),
+    ("pci", 2.0),
+    ("compliance", 2.0),
+    ("real-time", 2.0),
+    ("streaming", 2.0),
+    ("distributed", 2.0),
+    ("downtime", 2.0),
+    ("incident", 2.0),
+    # Lower-signal risk (weight 1.0) — common in positive contexts too
+    ("security", 1.0),
+    ("encryption", 1.0),
+    ("third-party", 1.0),
+    ("external api", 1.0),
+    ("latency", 1.0),
+    ("throughput", 1.0),
+]
 
 
 def _score_risk(ticket: JiraTicket) -> float:
-    """Detect risk/uncertainty indicators in the ticket content."""
-    risk_keywords = [
-        "migration", "deprecat", "rollback", "breaking change",
-        "security", "pci", "compliance", "audit",
-        "real-time", "streaming", "distributed",
-        "performance", "latency", "throughput",
-        "third-party", "external api", "vendor",
-        "data loss", "downtime", "incident",
-        "encryption", "secrets", "credential",
-    ]
+    """Detect risk/uncertainty indicators using weighted phrase matching (max 15).
+
+    Uses phrase-level matching with context-aware weights to reduce false
+    positives. High-signal phrases like "breaking change" score more than
+    ambiguous words like "security".
+    """
     combined_text = (ticket.summary + " " + ticket.description).lower()
-    hits = sum(1 for kw in risk_keywords if kw in combined_text)
-    return min(hits * 2.5, 15.0)
+    weighted_score = sum(weight for phrase, weight in _RISK_PHRASES
+                         if phrase in combined_text)
+    return min(weighted_score, 15.0)
 
 
 def analyze_complexity(ticket: JiraTicket) -> ComplexityBreakdown:

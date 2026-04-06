@@ -64,14 +64,14 @@ def print_ticket_card(analysis: TicketAnalysis, show_breakdown: bool = False):
     color = EFFICIENCY_COLORS.get(eff, RESET)
 
     ct_str = f"{analysis.cycle_time_days:.1f}d" if analysis.cycle_time_days else "N/A"
-    adj_str = (f"{analysis.complexity_adjusted_velocity:.3f}"
-               if analysis.complexity_adjusted_velocity else "N/A")
+    adj_str = (f"{analysis.adjusted_pace:.3f}"
+               if analysis.adjusted_pace else "N/A")
 
     print(f"  {BOLD}{t.key}{RESET}  {t.summary[:55]}")
     print(f"    Type: {t.type:<8}  Points: {t.story_points or '-':<3} "
           f" Complexity: {cx.total:.0f}/100 ({cx.category})")
     print(f"    Cycle: {ct_str:<8}  Defects: {analysis.defect_count:<3} "
-          f" Adj.Velocity: {adj_str}  "
+          f" Adj.Pace: {adj_str}  "
           f" Efficiency: {color}{eff}{RESET}")
 
     if show_breakdown:
@@ -106,50 +106,54 @@ def print_project_report(stats: ProjectStats):
     print(f"  Avg defects per ticket:   {BOLD}{stats.avg_defects_per_ticket:.2f}{RESET}")
     print(f"  Min / Max:                {stats.min_defects} / {stats.max_defects}")
     print(f"  Defect-free rate:         {GREEN}{stats.defect_free_rate:.1f}%{RESET}")
-    print(f"  Critical defect rate:     {RED}{stats.critical_defect_rate:.1f}%{RESET} "
-          f"of all defects")
+    if stats.critical_defect_rate is not None:
+        print(f"  Critical defect rate:     {RED}{stats.critical_defect_rate:.1f}%{RESET} "
+              f"of all defects")
+    else:
+        print(f"  Critical defect rate:     {DIM}N/A (no defects found){RESET}")
 
-    if stats.defect_density_by_complexity:
-        print(f"\n  {BOLD}Defect density by complexity:{RESET}")
-        max_dd = max(stats.defect_density_by_complexity.values()) if stats.defect_density_by_complexity else 1
-        for cat, density in stats.defect_density_by_complexity.items():
-            bar = hbar(density, max_dd, 20)
-            print(f"    {cat:<15} {bar} {density:.2f} defects/ticket")
+    if stats.avg_defects_by_category:
+        print(f"\n  {BOLD}Avg defects per ticket by complexity category:{RESET}")
+        max_dd = max(stats.avg_defects_by_category.values()) if stats.avg_defects_by_category else 1
+        for cat, avg_def in stats.avg_defects_by_category.items():
+            bar = hbar(avg_def, max_dd, 20)
+            print(f"    {cat:<15} {bar} {avg_def:.2f} defects/ticket")
 
-    # ---- Velocity ----
-    section("VELOCITY ANALYSIS")
-    print(f"  {BOLD}Raw velocity{RESET} (days per story point):  {stats.avg_raw_velocity:.2f}")
-    print(f"  {BOLD}Adjusted velocity{RESET} (days per complexity unit): {stats.avg_adjusted_velocity:.3f}")
+    # ---- Pace ----
+    section("THROUGHPUT ANALYSIS")
+    print(f"  {BOLD}Raw pace{RESET} (days per story point):           {stats.avg_raw_velocity:.2f}")
+    print(f"  {BOLD}Complexity-adjusted pace{RESET} (days per unit):  {stats.avg_adjusted_pace:.3f}")
     print()
-    print(f"  {DIM}Adjusted velocity normalizes by content complexity, not just points.")
-    print(f"  Lower = faster. This lets you fairly compare a 2-week epic vs a 1-day bug.{RESET}")
+    print(f"  {DIM}Adjusted pace = cycle time / complexity score. Lower = faster.")
+    print(f"  This normalizes by content complexity, so you can fairly compare")
+    print(f"  a 2-week epic vs a 1-day bug fix.{RESET}")
 
     # ---- By Type ----
     section("BREAKDOWN BY TICKET TYPE")
     print(f"  {'Type':<10} {'Count':>5} {'Avg Cycle':>10} {'Avg Defects':>12} "
-          f"{'Avg Complex':>12} {'Adj Velocity':>13}")
-    print(f"  {'─'*10} {'─'*5} {'─'*10} {'─'*12} {'─'*12} {'─'*13}")
+          f"{'Avg Complex':>12} {'Adj Pace':>10}")
+    print(f"  {'─'*10} {'─'*5} {'─'*10} {'─'*12} {'─'*12} {'─'*10}")
     for ttype, data in sorted(stats.stats_by_type.items()):
-        adj = f"{data['avg_adjusted_velocity']:.3f}" if data['avg_adjusted_velocity'] else "N/A"
+        adj = f"{data['avg_adjusted_pace']:.3f}" if data['avg_adjusted_pace'] else "N/A"
         print(f"  {ttype:<10} {data['count']:>5} {data['avg_cycle_time']:>9.1f}d "
-              f"{data['avg_defects']:>12.2f} {data['avg_complexity']:>12.1f} {adj:>13}")
+              f"{data['avg_defects']:>12.2f} {data['avg_complexity']:>12.1f} {adj:>10}")
 
     # ---- By Complexity Category ----
     section("BREAKDOWN BY COMPLEXITY CATEGORY")
     print(f"  {'Category':<16} {'Count':>5} {'Avg Cycle':>10} {'Med Cycle':>10} "
-          f"{'Avg Defects':>12} {'Adj Velocity':>13}")
-    print(f"  {'─'*16} {'─'*5} {'─'*10} {'─'*10} {'─'*12} {'─'*13}")
+          f"{'Avg Defects':>12} {'Adj Pace':>10}")
+    print(f"  {'─'*16} {'─'*5} {'─'*10} {'─'*10} {'─'*12} {'─'*10}")
     for cat in ["Trivial", "Simple", "Moderate", "Complex", "Highly Complex"]:
         if cat not in stats.stats_by_complexity:
             continue
         data = stats.stats_by_complexity[cat]
-        adj = f"{data['avg_adjusted_velocity']:.3f}" if data['avg_adjusted_velocity'] else "N/A"
+        adj = f"{data['avg_adjusted_pace']:.3f}" if data['avg_adjusted_pace'] else "N/A"
         print(f"  {cat:<16} {data['count']:>5} {data['avg_cycle_time']:>9.1f}d "
-              f"{data['median_cycle_time']:>9.1f}d {data['avg_defects']:>12.2f} {adj:>13}")
+              f"{data['median_cycle_time']:>9.1f}d {data['avg_defects']:>12.2f} {adj:>10}")
 
     # ---- Key insight ----
     section("KEY INSIGHT: RELATIVE PERFORMANCE")
-    print(f"  {BOLD}Complexity-adjusted velocity reveals true throughput.{RESET}\n")
+    print(f"  {BOLD}Complexity-adjusted pace reveals true throughput.{RESET}\n")
 
     # Compare the fastest complex ticket to the slowest simple ticket
     complex_fast = [a for a in stats.fastest_relative if a.complexity.total >= 50]
@@ -159,31 +163,34 @@ def print_project_report(stats: ProjectStats):
         cf = complex_fast[0]
         ss = simple_slow[0]
         print(f"  Example comparison:")
-        print(f"    {GREEN}FAST (relative){RESET}: {cf.ticket.key} — "
+        print(f"    {GREEN}+ FAST (relative){RESET}: {cf.ticket.key} — "
               f"\"{cf.ticket.summary[:45]}\"")
         print(f"      Complexity: {cf.complexity.total:.0f}  "
               f"Cycle: {cf.cycle_time_days:.1f}d  "
-              f"Adj.Vel: {cf.complexity_adjusted_velocity:.3f}")
+              f"Adj.Pace: {cf.adjusted_pace:.3f}")
         print()
-        print(f"    {RED}SLOW (relative){RESET}: {ss.ticket.key} — "
+        print(f"    {RED}- SLOW (relative){RESET}: {ss.ticket.key} — "
               f"\"{ss.ticket.summary[:45]}\"")
         print(f"      Complexity: {ss.complexity.total:.0f}  "
               f"Cycle: {ss.cycle_time_days:.1f}d  "
-              f"Adj.Vel: {ss.complexity_adjusted_velocity:.3f}")
+              f"Adj.Pace: {ss.adjusted_pace:.3f}")
         print()
-        if cf.complexity_adjusted_velocity and ss.complexity_adjusted_velocity:
-            ratio = ss.complexity_adjusted_velocity / cf.complexity_adjusted_velocity
+        if cf.adjusted_pace and ss.adjusted_pace:
+            ratio = ss.adjusted_pace / cf.adjusted_pace
             print(f"    {BOLD}The complex ticket was {ratio:.1f}x more efficient "
                   f"per unit of complexity.{RESET}")
             print(f"    Despite taking longer in absolute time, it delivered more "
                   f"value per day of effort.")
+    else:
+        print(f"  {DIM}Not enough variety in complexity levels to show a comparison.")
+        print(f"  Need both complex (score >= 50) and simple (score < 40) tickets.{RESET}")
 
     # ---- Top performers ----
-    section("TOP 5 — FASTEST (complexity-adjusted)")
+    section("TOP 5 — BEST PACE (complexity-adjusted)")
     for a in stats.fastest_relative:
         print_ticket_card(a)
 
-    section("BOTTOM 5 — SLOWEST (complexity-adjusted)")
+    section("BOTTOM 5 — WORST PACE (complexity-adjusted)")
     for a in stats.slowest_relative:
         print_ticket_card(a)
 
@@ -198,6 +205,9 @@ def print_project_report(stats: ProjectStats):
 
     # ---- Summary ----
     section("EXECUTIVE SUMMARY")
+    crit_str = (f"{stats.critical_defect_rate:.0f}% being critical severity"
+                if stats.critical_defect_rate is not None
+                else "no defects found")
     print(f"""
   {BOLD}{stats.project_name} ({stats.project_key}){RESET}
 
@@ -206,16 +216,16 @@ def print_project_report(stats: ProjectStats):
 
   Quality: {stats.defect_free_rate:.0f}% of tickets shipped defect-free.
   Average {stats.avg_defects_per_ticket:.1f} defects per ticket, with
-  {stats.critical_defect_rate:.0f}% being critical severity.
+  {crit_str}.
 
-  Complexity-adjusted velocity: {stats.avg_adjusted_velocity:.3f} days per
+  Complexity-adjusted pace: {stats.avg_adjusted_pace:.3f} days per
   complexity unit — this normalizes for ticket difficulty, enabling fair
   comparison across ticket types and sizes.
 
   {BOLD}Key takeaway:{RESET} Raw cycle time alone is misleading. A ticket that
-  took 2 weeks but scored 80/100 on complexity (adj. velocity ~0.18) is
+  took 2 weeks but scored 80/100 on complexity (adj. pace ~0.18) is
   actually more efficient than a ticket that took 3 days but scored only
-  15/100 (adj. velocity ~0.20). Use adjusted velocity to evaluate team
+  15/100 (adj. pace ~0.20). Use adjusted pace to evaluate team
   throughput fairly.
 """)
 
@@ -250,11 +260,11 @@ def print_ticket_deepdive(ticket: JiraTicket):
                          cx.integration_score, cx.type_score,
                          cx.scope_score, cx.risk_score, 1)
     components = [
-        ("Description richness", cx.description_score, 20),
-        ("Requirements depth", cx.requirements_score, 20),
+        ("Description richness", cx.description_score, 15),
+        ("Requirements depth", cx.requirements_score, 15),
         ("Integration scope", cx.integration_score, 15),
         ("Type complexity", cx.type_score, 15),
-        ("Team estimate (pts)", cx.scope_score, 15),
+        ("Team estimate (pts)", cx.scope_score, 25),
         ("Risk indicators", cx.risk_score, 15),
     ]
     for name, score, max_score in components:
@@ -282,17 +292,17 @@ def print_ticket_deepdive(ticket: JiraTicket):
             print(f"  {d.key}  [{d.severity.upper()}]  {status}")
 
     if ct and cx.total > 0:
-        adj_vel = ct / cx.total
-        section("RELATIVE VELOCITY")
-        print(f"  Adjusted velocity: {adj_vel:.3f} (days per complexity unit)")
-        print(f"  Raw velocity:      {ct / (ticket.story_points or 1):.2f} (days per story point)")
+        adj_pace = ct / cx.total
+        section("COMPLEXITY-ADJUSTED PACE")
+        print(f"  Adjusted pace: {adj_pace:.3f} days per complexity unit (lower = faster)")
+        print(f"  Raw pace:      {ct / (ticket.story_points or 1):.2f} days per story point")
         print()
-        if adj_vel < 0.15:
-            print(f"  {GREEN}This ticket was executed efficiently relative to its complexity.{RESET}")
-        elif adj_vel < 0.25:
-            print(f"  {YELLOW}This ticket was executed at a typical pace for its complexity.{RESET}")
+        if adj_pace < 0.15:
+            print(f"  {GREEN}+ This ticket was executed efficiently relative to its complexity.{RESET}")
+        elif adj_pace < 0.25:
+            print(f"  {YELLOW}~ This ticket was executed at a typical pace for its complexity.{RESET}")
         else:
-            print(f"  {RED}This ticket took longer than expected for its complexity level.{RESET}")
+            print(f"  {RED}- This ticket took longer than expected for its complexity level.{RESET}")
 
 
 # ---------------------------------------------------------------------------
