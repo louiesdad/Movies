@@ -73,6 +73,7 @@ class ProjectStats:
     # Backlog wait
     avg_backlog_wait: float
     avg_backlog_wait_pct: float              # avg % of lead time spent in backlog
+    backlog_is_primary_constraint: bool      # True when avg wait > 50% of avg lead time
     backlog_bottlenecks: List[TicketAnalysis] # tickets where wait > 50% of lead time
     # Top performers and concerns
     fastest_relative: List[TicketAnalysis]
@@ -112,7 +113,7 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         defects = ticket.linked_defects
         defect_count = len(defects)
         unresolved = sum(1 for d in defects if not d.resolved)
-        raw_vel = (ct / ticket.story_points) if (ct is not None and ticket.story_points) else None
+        raw_vel = (ct / ticket.story_points) if (ct is not None and ticket.story_points is not None and ticket.story_points > 0) else None
         adj_pace = (ct / cx.total) if (ct is not None and cx.total > 0) else None
         backlog_wait = (lt - ct) if (lt is not None and ct is not None) else None
         backlog_pct = (backlog_wait / lt * 100) if (backlog_wait is not None and lt is not None and lt > 0) else None
@@ -186,12 +187,17 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         type_adj = [a.adjusted_pace for a in type_items
                      if a.adjusted_pace is not None]
         type_complexities = [a.complexity.total for a in type_items]
+        type_defect_free = sum(1 for a in type_items if a.defect_count == 0)
+        type_has_critical = sum(1 for a in type_items
+            if any(d.severity == "critical" for d in a.ticket.linked_defects))
         stats_by_type[ttype] = {
             "count": len(type_items),
             "avg_cycle_time": round(statistics.mean(type_cts), 1),
             "median_cycle_time": round(statistics.median(type_cts), 1),
             "cycle_time_stddev": round(statistics.stdev(type_cts), 1) if len(type_cts) > 1 else 0.0,
             "avg_defects": round(statistics.mean(type_defects), 2),
+            "defect_free_rate": round(type_defect_free / len(type_items) * 100, 1),
+            "critical_defect_rate": round(type_has_critical / len(type_items) * 100, 1),
             "avg_complexity": round(statistics.mean(type_complexities), 1),
             "avg_adjusted_pace": round(statistics.mean(type_adj), 3) if type_adj else None,
         }
@@ -225,12 +231,17 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         prio_defects = [a.defect_count for a in prio_items]
         prio_adj = [a.adjusted_pace for a in prio_items if a.adjusted_pace is not None]
         prio_complexities = [a.complexity.total for a in prio_items]
+        prio_defect_free = sum(1 for a in prio_items if a.defect_count == 0)
+        prio_has_critical = sum(1 for a in prio_items
+            if any(d.severity == "critical" for d in a.ticket.linked_defects))
         stats_by_priority[prio] = {
             "count": len(prio_items),
             "avg_cycle_time": round(statistics.mean(prio_cts), 1),
             "median_cycle_time": round(statistics.median(prio_cts), 1),
             "cycle_time_stddev": round(statistics.stdev(prio_cts), 1) if len(prio_cts) > 1 else 0.0,
             "avg_defects": round(statistics.mean(prio_defects), 2),
+            "defect_free_rate": round(prio_defect_free / len(prio_items) * 100, 1),
+            "critical_defect_rate": round(prio_has_critical / len(prio_items) * 100, 1),
             "avg_complexity": round(statistics.mean(prio_complexities), 1),
             "avg_adjusted_pace": round(statistics.mean(prio_adj), 3) if prio_adj else None,
         }
@@ -293,6 +304,9 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         avg_adjusted_pace=round(avg_adj_pace, 3),
         avg_backlog_wait=round(statistics.mean(backlog_waits), 1) if backlog_waits else 0,
         avg_backlog_wait_pct=round(statistics.mean(backlog_pcts), 1) if backlog_pcts else 0,
+        backlog_is_primary_constraint=(
+            statistics.mean(backlog_pcts) > 50 if backlog_pcts else False
+        ),
         backlog_bottlenecks=backlog_bottlenecks,
         stats_by_type=stats_by_type,
         stats_by_complexity=stats_by_complexity,

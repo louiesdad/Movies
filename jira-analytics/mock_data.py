@@ -599,7 +599,7 @@ def _generate_defects(ticket: dict, ticket_key: str) -> List[JiraDefect]:
     if random.random() < defect_chance:
         num = random.randint(1, max_defects)
         severities = ["critical", "major", "minor", "trivial"]
-        sev_weights = [0.1, 0.3, 0.4, 0.2]
+        sev_weights = [0.05, 0.15, 0.45, 0.35]
         for i in range(num):
             sev = random.choices(severities, weights=sev_weights, k=1)[0]
             resolved = random.random() < 0.85

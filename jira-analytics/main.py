@@ -105,6 +105,10 @@ def print_project_report(stats: ProjectStats):
     section("BACKLOG WAIT (time from created to started)")
     print(f"  Avg wait:             {BOLD}{stats.avg_backlog_wait:.1f} days{RESET}")
     print(f"  Avg wait as % of lead time: {stats.avg_backlog_wait_pct:.0f}%")
+    if stats.backlog_is_primary_constraint:
+        print(f"\n  {RED}- WARNING: Backlog wait is the primary constraint.{RESET}")
+        print(f"  {DIM}  On average, tickets spend more time waiting than being worked on.")
+        print(f"    Focus on triage/prioritization rather than execution speed.{RESET}")
     if stats.backlog_bottlenecks:
         print(f"\n  {BOLD}Bottlenecks{RESET} — tickets where >50% of lead time was backlog wait:")
         for a in stats.backlog_bottlenecks:
@@ -153,13 +157,14 @@ def print_project_report(stats: ProjectStats):
     # ---- By Type ----
     section("BREAKDOWN BY TICKET TYPE")
     print(f"  {'Type':<10} {'Count':>5} {'Avg Cycle':>10} {'Median':>7} {'StdDev':>7} "
-          f"{'Avg Defects':>12} {'Adj Pace':>10}")
-    print(f"  {'─'*10} {'─'*5} {'─'*10} {'─'*7} {'─'*7} {'─'*12} {'─'*10}")
+          f"{'DefFree%':>9} {'Crit%':>6} {'Adj Pace':>10}")
+    print(f"  {'─'*10} {'─'*5} {'─'*10} {'─'*7} {'─'*7} {'─'*9} {'─'*6} {'─'*10}")
     for ttype, data in sorted(stats.stats_by_type.items()):
         adj = f"{data['avg_adjusted_pace']:.3f}" if data['avg_adjusted_pace'] else "N/A"
         print(f"  {ttype:<10} {data['count']:>5} {data['avg_cycle_time']:>9.1f}d "
               f"{data['median_cycle_time']:>6.1f}d {data['cycle_time_stddev']:>6.1f}d"
-              f"{data['avg_defects']:>12.2f} {adj:>10}")
+              f"{data['defect_free_rate']:>8.0f}% {data['critical_defect_rate']:>5.0f}%"
+              f" {adj:>10}")
 
     # ---- By Complexity Category ----
     section("BREAKDOWN BY COMPLEXITY CATEGORY")
@@ -179,8 +184,8 @@ def print_project_report(stats: ProjectStats):
     if stats.stats_by_priority:
         section("BREAKDOWN BY PRIORITY")
         print(f"  {'Priority':<10} {'Count':>5} {'Avg Cycle':>10} {'Median':>7} {'StdDev':>7} "
-              f"{'Avg Defects':>12} {'Adj Pace':>10}")
-        print(f"  {'─'*10} {'─'*5} {'─'*10} {'─'*7} {'─'*7} {'─'*12} {'─'*10}")
+              f"{'DefFree%':>9} {'Crit%':>6} {'Adj Pace':>10}")
+        print(f"  {'─'*10} {'─'*5} {'─'*10} {'─'*7} {'─'*7} {'─'*9} {'─'*6} {'─'*10}")
         for prio in ["Critical", "High", "Medium", "Low"]:
             if prio not in stats.stats_by_priority:
                 continue
@@ -188,7 +193,8 @@ def print_project_report(stats: ProjectStats):
             adj = f"{data['avg_adjusted_pace']:.3f}" if data['avg_adjusted_pace'] else "N/A"
             print(f"  {prio:<10} {data['count']:>5} {data['avg_cycle_time']:>9.1f}d "
                   f"{data['median_cycle_time']:>6.1f}d {data['cycle_time_stddev']:>6.1f}d"
-                  f"{data['avg_defects']:>12.2f} {adj:>10}")
+                  f"{data['defect_free_rate']:>8.0f}% {data['critical_defect_rate']:>5.0f}%"
+                  f" {adj:>10}")
 
     # ---- Key insight ----
     section("KEY INSIGHT: RELATIVE PERFORMANCE")
