@@ -42,6 +42,8 @@ class ProjectStats:
     project_name: str
     total_tickets: int
     completed_tickets: int
+    # Phase distribution (from status mapper)
+    phase_distribution: Dict[str, int]  # phase -> count
     # Cycle time
     avg_cycle_time: float
     min_cycle_time: float
@@ -144,6 +146,12 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
             backlog_wait_pct=round(backlog_pct, 1) if backlog_pct is not None else None,
             relative_efficiency=None,  # set after computing average
         ))
+
+    # Compute phase distribution using status mapper
+    phase_dist: Dict[str, int] = {}
+    for a in analyses:
+        phase = mapper.map(a.ticket.status).phase.value
+        phase_dist[phase] = phase_dist.get(phase, 0) + 1
 
     # Filter to completed tickets for time-based stats
     completed = [a for a in analyses if a.cycle_time_days is not None]
@@ -266,10 +274,15 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
     for cat, data in stats_by_complexity.items():
         avg_defects_by_cat[cat] = data["avg_defects"]
 
-    # Sprint velocity trend
-    sprint_names = sorted(set(
-        a.ticket.sprint for a in completed if a.ticket.sprint is not None
-    ))
+    # Sprint velocity trend (natural sort so "Sprint 10" comes after "Sprint 9")
+    import re
+    def _natural_sort_key(s: str):
+        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s)]
+
+    sprint_names = sorted(
+        set(a.ticket.sprint for a in completed if a.ticket.sprint is not None),
+        key=_natural_sort_key,
+    )
     sprint_trend: List[dict] = []
     for sprint in sprint_names:
         sp_items = [a for a in completed if a.ticket.sprint == sprint]
@@ -321,6 +334,7 @@ def analyze_project(tickets: List[JiraTicket], project_key: str,
         project_name=project_name,
         total_tickets=len(analyses),
         completed_tickets=len(completed),
+        phase_distribution=phase_dist,
         avg_cycle_time=round(statistics.mean(cycle_times), 1),
         min_cycle_time=round(min(cycle_times), 1),
         max_cycle_time=round(max(cycle_times), 1),

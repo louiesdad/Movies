@@ -90,7 +90,15 @@ def print_project_report(stats: ProjectStats):
     """Print a full analytics report for a project."""
     section(f"PROJECT REPORT: {stats.project_key} — {stats.project_name}")
     print(f"  Tickets analyzed: {stats.completed_tickets} completed "
-          f"/ {stats.total_tickets} total\n")
+          f"/ {stats.total_tickets} total")
+    if stats.phase_distribution:
+        phase_order = ["done", "review", "active", "ready", "backlog", "unknown"]
+        parts = []
+        for p in phase_order:
+            if p in stats.phase_distribution:
+                parts.append(f"{p}: {stats.phase_distribution[p]}")
+        print(f"  Phase distribution: {', '.join(parts)}")
+    print()
 
     # ---- Cycle Time ----
     section("CYCLE TIME (time from start to resolution)")
@@ -215,7 +223,7 @@ def print_project_report(stats: ProjectStats):
         # Show trend direction
         first = stats.sprint_trend[0]
         last = stats.sprint_trend[-1]
-        if first['avg_adjusted_pace'] and last['avg_adjusted_pace']:
+        if first['avg_adjusted_pace'] is not None and last['avg_adjusted_pace'] is not None:
             change = (last['avg_adjusted_pace'] - first['avg_adjusted_pace']) / first['avg_adjusted_pace'] * 100
             if change < -10:
                 print(f"\n  {GREEN}+ Pace improved {abs(change):.0f}% from {first['sprint']} to {last['sprint']}{RESET}")
@@ -309,7 +317,14 @@ def print_ticket_deepdive(ticket: JiraTicket):
     print(f"  Summary:   {ticket.summary}")
     print(f"  Type:      {ticket.type}")
     print(f"  Priority:  {ticket.priority}")
-    print(f"  Status:    {ticket.status}")
+    mapper = StatusMapper()
+    status_info = mapper.map(ticket.status)
+    phase_str = f" → {status_info.phase.value}"
+    if status_info.is_blocked:
+        phase_str += f" {RED}(BLOCKED){RESET}"
+    if status_info.confidence < 0.7:
+        phase_str += f" {YELLOW}(low confidence: {status_info.confidence:.0%}){RESET}"
+    print(f"  Status:    {ticket.status}{phase_str}")
     print(f"  Assignee:  {ticket.assignee}")
     print(f"  Points:    {ticket.story_points}")
     print(f"  Sprint:    {ticket.sprint or 'N/A'}")
@@ -332,9 +347,6 @@ def print_ticket_deepdive(ticket: JiraTicket):
 
     section("COMPLEXITY ANALYSIS")
     print(f"  {BOLD}Overall score: {cx.total:.0f}/100 — {cx.category}{RESET}\n")
-    max_component = max(cx.description_score, cx.requirements_score,
-                         cx.integration_score, cx.type_score,
-                         cx.scope_score, cx.risk_score, 1)
     components = [
         ("Description richness", cx.description_score, 15),
         ("Requirements depth", cx.requirements_score, 15),
