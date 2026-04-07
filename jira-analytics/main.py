@@ -309,7 +309,7 @@ def print_project_report(stats: ProjectStats):
 """)
 
 
-def print_ticket_deepdive(ticket: JiraTicket):
+def print_ticket_deepdive(ticket: JiraTicket, mapper=None):
     """Print a detailed analysis of a single ticket."""
     cx = analyze_complexity(ticket)
 
@@ -317,8 +317,8 @@ def print_ticket_deepdive(ticket: JiraTicket):
     print(f"  Summary:   {ticket.summary}")
     print(f"  Type:      {ticket.type}")
     print(f"  Priority:  {ticket.priority}")
-    mapper = StatusMapper()
-    status_info = mapper.map(ticket.status)
+    _mapper = mapper or StatusMapper()
+    status_info = _mapper.map(ticket.status)
     phase_str = f" → {status_info.phase.value}"
     if status_info.is_blocked:
         phase_str += f" {RED}(BLOCKED){RESET}"
@@ -498,7 +498,7 @@ def main():
                   f"use --tickets to increase)")
             sys.exit(1)
         tickets = generate_project_tickets(proj_key, count=args.tickets)
-        print_ticket_deepdive(tickets[ticket_num - 1])
+        print_ticket_deepdive(tickets[ticket_num - 1], mapper=mapper)
         return
 
     # Determine which projects to analyze
