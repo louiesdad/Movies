@@ -125,6 +125,26 @@ def build_summary(
                      key=lambda b: b.bug_rate + b.rework_rate,
                      reverse=True)[:5]
 
+    # Data quality overview
+    total_with_timing = sum(1 for t in included
+                            if t.cycle_time_days is not None)
+    total_high_status = sum(1 for t in included
+                            if t.status_mapping_confidence == Confidence.HIGH)
+    total_high_size = sum(1 for t in included
+                          if t.size_confidence == Confidence.HIGH)
+    n_included = len(included) or 1  # avoid division by zero
+
+    data_quality = {
+        "timing_coverage": round(total_with_timing / n_included, 2),
+        "status_mapping_quality": round(total_high_status / n_included, 2),
+        "size_confidence_quality": round(total_high_size / n_included, 2),
+        "included_ratio": round(len(included) / max(len(tickets), 1), 2),
+    }
+
+    # Generate actionable recommendations
+    recommendations = _generate_recommendations(
+        included, excluded, bucket_metrics, data_quality, high_conf)
+
     return AnalysisSummary(
         project_key=project_key,
         analysis_window_start=window_start,
@@ -137,4 +157,84 @@ def build_summary(
         high_confidence_buckets=high_conf,
         slow_buckets=slow,
         quality_hotspots=quality,
+        data_quality=data_quality,
+        recommendations=recommendations,
     )
+
+
+def _generate_recommendations(
+    included: List[NormalizedTicket],
+    excluded: List[NormalizedTicket],
+    buckets: List[BucketMetrics],
+    data_quality: dict,
+    high_conf_count: int,
+) -> List[str]:
+    """Generate actionable recommendations based on analysis results."""
+    recs: List[str] = []
+
+    # Data quality
+    if data_quality["timing_coverage"] < 0.5:
+        recs.append(
+            "Low timing coverage: less than 50% of baseline tickets have "
+            "cycle time data. Check that your Jira workflow has clear "
+            "status transitions, or add status_overrides in config."
+        )
+    if data_quality["status_mapping_quality"] < 0.5:
+        recs.append(
+            "Many statuses mapped with low confidence. Review your "
+            "workflow's custom statuses and add status_overrides for "
+            "any that were not auto-detected."
+        )
+    if data_quality["size_confidence_quality"] < 0.5:
+        recs.append(
+            "Most tickets lack story points, causing low-confidence "
+            "size classification. Consider adding story points to "
+            "your workflow, or accept that size buckets will rely "
+            "on content heuristics."
+        )
+
+    # Exclusion rate
+    total = len(included) + len(excluded)
+    if total > 0 and len(excluded) / total > 0.4:
+        recs.append(
+            f"High exclusion rate: {len(excluded)}/{total} tickets excluded. "
+            "Check for unresolved tickets, duplicates, or Epics that "
+            "dominate the project. Consider narrowing the analysis window."
+        )
+
+    # Bucket confidence
+    if high_conf_count == 0 and len(buckets) > 0:
+        recs.append(
+            "No high-confidence buckets. The project may not have enough "
+            "completed tickets per type/size/area combination. Consider "
+            "broadening the analysis window or accepting medium-confidence "
+            "baselines for comparison."
+        )
+
+    # Slow buckets
+    slow = [b for b in buckets if b.median_cycle_time_days is not None
+            and b.median_cycle_time_days > 14]
+    if slow:
+        names = ", ".join(str(b.bucket) for b in slow[:3])
+        recs.append(
+            f"Buckets with >14-day median cycle time: {names}. "
+            "These are candidates for process improvement or "
+            "scope reduction before AI comparison."
+        )
+
+    # Quality hotspots
+    bad_quality = [b for b in buckets if b.bug_rate + b.rework_rate > 0.5]
+    if bad_quality:
+        names = ", ".join(str(b.bucket) for b in bad_quality[:3])
+        recs.append(
+            f"Buckets with >50% combined bug+rework rate: {names}. "
+            "Investigate root causes before using these baselines "
+            "for AI comparison."
+        )
+
+    if not recs:
+        recs.append(
+            "Data quality looks good. Baselines are ready for comparison."
+        )
+
+    return recs

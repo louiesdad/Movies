@@ -105,6 +105,9 @@ class TestExportSummaryJson(unittest.TestCase):
             high_confidence_buckets=3,
             slow_buckets=[_sample_bucket()],
             quality_hotspots=[],
+            data_quality={"timing_coverage": 0.85, "status_mapping_quality": 0.9,
+                           "size_confidence_quality": 0.8, "included_ratio": 0.8},
+            recommendations=["Data quality looks good."],
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "summary.json")

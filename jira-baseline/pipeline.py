@@ -65,9 +65,15 @@ def normalize_issue(
         config=config,
     )
 
-    # Bug detection — linked_bugs populated by Jira client
-    # (config.defect_link_types will be used by LiveJiraClient to filter link types)
-    has_bug = len(issue.linked_bugs) > 0
+    # Bug detection — two sources:
+    #   1. Pre-filtered linked_bugs from Jira client
+    #   2. issue_links matched against config.defect_link_types
+    defect_types = {t.lower() for t in config.defect_link_types}
+    has_bug_from_links = any(
+        isinstance(link, dict) and link.get("type", "").lower() in defect_types
+        for link in (issue.issue_links or [])
+    )
+    has_bug = len(issue.linked_bugs) > 0 or has_bug_from_links
 
     # Rework detection — three signal sources:
     #   1. Changelog backward transition (high confidence)

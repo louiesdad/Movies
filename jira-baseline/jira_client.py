@@ -210,6 +210,8 @@ class SampleJiraClient(JiraClient):
                 dependencies=[f"{project_key}-{random.randint(1, max(1, i))}"
                               for _ in range(random.randint(0, 2))] if i > 0 else [],
                 linked_bugs=linked_bugs,
+                issue_links=[{"type": "is caused by", "target": b}
+                             for b in linked_bugs],
                 created=created,
                 resolved=resolved,
                 assignee=random.choice([

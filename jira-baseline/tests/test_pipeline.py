@@ -42,6 +42,8 @@ def _make_issue(
         subtasks=subtasks or [],
         dependencies=dependencies or [],
         linked_bugs=linked_bugs or [],
+        issue_links=[{"type": "is caused by", "target": b}
+                     for b in (linked_bugs or [])],
         created=created, resolved=changelog[-1].timestamp if changelog else None,
         assignee="Alice", sprint="Sprint 1",
         changelog=changelog,
@@ -93,7 +95,8 @@ class TestNormalizeIssue(unittest.TestCase):
             description="Still in progress",
             story_points=5, components=["API"], labels=[],
             acceptance_criteria=["AC1"], subtasks=[], dependencies=[],
-            linked_bugs=[], created=created, resolved=None,
+            linked_bugs=[], issue_links=[],
+            created=created, resolved=None,
             assignee="Alice", sprint=None, changelog=changelog,
         )
         ticket = normalize_issue(issue, self.normalizer, self.config)

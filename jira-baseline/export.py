@@ -91,6 +91,8 @@ def _summary_to_dict(s: AnalysisSummary) -> dict:
         "high_confidence_buckets": s.high_confidence_buckets,
         "slow_buckets": [_bucket_to_dict(b) for b in s.slow_buckets],
         "quality_hotspots": [_bucket_to_dict(b) for b in s.quality_hotspots],
+        "data_quality": s.data_quality,
+        "recommendations": s.recommendations,
     }
 
 

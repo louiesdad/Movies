@@ -46,6 +46,8 @@ def _make_issue(
         subtasks=subtasks or [],
         dependencies=dependencies or [],
         linked_bugs=linked_bugs or [],
+        issue_links=[{"type": "is caused by", "target": b}
+                     for b in (linked_bugs or [])],
         created=created,
         resolved=changelog[-1].timestamp if changelog else None,
         assignee="Alice", sprint="Sprint 1",

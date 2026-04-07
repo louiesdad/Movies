@@ -2,6 +2,7 @@
 Classifier — assigns size and area buckets to tickets.
 """
 
+import re
 from typing import Dict, List, Optional, Tuple
 
 from models import Size, Area, Confidence
@@ -83,33 +84,52 @@ def classify_size(
 # Area classification
 # ---------------------------------------------------------------------------
 
+# Keywords use word-boundary matching to avoid false positives
+# (e.g. "ci" in "specification"). Multi-word phrases are substring-matched.
 _DEFAULT_AREA_KEYWORDS: Dict[Area, List[str]] = {
     Area.FRONTEND: [
         "ui", "web", "react", "vue", "angular", "css", "browser", "client",
-        "frontend", "front-end", "sass", "less", "html", "javascript", "typescript",
-        "next", "nuxt", "svelte", "tailwind", "webpack", "vite",
+        "frontend", "front-end", "front end", "sass", "less", "html",
+        "javascript", "typescript", "nextjs", "next.js", "nuxt", "svelte",
+        "tailwind", "webpack", "vite", "storybook", "figma", "responsive",
+        "accessibility", "a11y", "dom", "jsx", "tsx", "component library",
     ],
     Area.BACKEND: [
         "api", "service", "server", "gateway", "auth", "payments", "checkout",
-        "backend", "back-end", "rest", "graphql", "grpc", "microservice",
-        "endpoint", "middleware", "webhook", "queue",
+        "backend", "back-end", "back end", "rest", "graphql", "grpc",
+        "microservice", "endpoint", "middleware", "webhook", "queue",
+        "lambda", "cron", "scheduler", "worker", "cache", "session",
+        "oauth", "jwt", "rbac", "rate limit", "throttle",
     ],
     Area.INFRA: [
-        "infra", "terraform", "cloud", "deploy", "ci", "cd", "k8s",
+        "infra", "terraform", "cloud", "deploy", "ci", "cd", "k8s", "ci/cd", "cicd",
         "database", "kubernetes", "docker", "aws", "gcp", "azure",
-        "monitoring", "logging", "devops", "pipeline", "helm", "nginx",
-        "redis", "kafka", "postgres", "mysql", "migration",
+        "monitoring", "logging", "devops", "helm", "nginx", "redis",
+        "kafka", "postgres", "mysql", "migration", "dns", "ssl", "tls",
+        "load balancer", "cdn", "s3", "ec2", "rds", "ecs", "fargate",
+        "prometheus", "grafana", "datadog", "sentry", "pagerduty",
+        "ansible", "pulumi", "cloudformation", "vault",
     ],
     Area.MOBILE: [
-        "ios", "android", "react-native", "mobile", "swift", "kotlin",
-        "flutter", "expo", "xcode", "gradle", "app store", "play store",
+        "ios", "android", "react-native", "react native", "mobile",
+        "swift", "kotlin", "flutter", "expo", "xcode", "gradle",
+        "app store", "play store", "cocoapods", "swiftui", "uikit",
+        "jetpack", "compose", "push notification", "deep link",
     ],
     Area.DATA: [
-        "etl", "warehouse", "analytics", "pipeline", "airflow", "dbt",
-        "data", "bigquery", "snowflake", "spark", "ml", "model",
-        "dataset", "reporting", "tableau", "looker",
+        "etl", "warehouse", "analytics", "airflow", "dbt",
+        "bigquery", "snowflake", "spark", "ml", "model", "dataset",
+        "reporting", "tableau", "looker", "metabase", "redshift",
+        "fivetran", "dagster", "data lake", "data pipeline",
+        "feature store", "training", "inference", "notebook",
     ],
 }
+
+# Short keywords that need word-boundary matching to avoid false positives.
+# e.g. "ci" should match "CI/CD" or "ci pipeline" but not "specification"
+_BOUNDARY_KEYWORDS = {"ui", "api", "ci", "cd", "ml", "k8s", "aws", "gcp",
+                       "dns", "ssl", "tls", "s3", "ec2", "rds", "ecs",
+                       "jwt", "dom", "jsx", "tsx", "ios"}
 
 
 def classify_area(
@@ -177,9 +197,18 @@ def classify_area(
 
 
 def _match_keywords(text: str, hits: Dict[Area, int], weight: int = 1):
-    """Match text against default area keyword lists."""
+    """Match text against default area keyword lists.
+
+    Short keywords (<=3 chars) use word-boundary matching to avoid
+    false positives like "ci" matching "specification".
+    """
     for area, keywords in _DEFAULT_AREA_KEYWORDS.items():
         for kw in keywords:
-            if kw in text:
+            if kw in _BOUNDARY_KEYWORDS:
+                # Word-boundary match for short/ambiguous keywords
+                if re.search(r'\b' + re.escape(kw) + r'\b', text, re.IGNORECASE):
+                    hits[area] = hits.get(area, 0) + weight
+                    break
+            elif kw in text:
                 hits[area] = hits.get(area, 0) + weight
                 break  # one match per area per text is enough

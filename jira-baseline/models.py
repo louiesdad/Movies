@@ -118,6 +118,7 @@ class JiraIssue:
     subtasks: List[str]
     dependencies: List[str]
     linked_bugs: List[str]
+    issue_links: List[Dict[str, str]]  # [{"type": "is caused by", "target": "KEY-1"}, ...]
     created: datetime
     resolved: Optional[datetime]
     assignee: Optional[str]
@@ -208,3 +209,7 @@ class AnalysisSummary:
     high_confidence_buckets: int
     slow_buckets: List[BucketMetrics]  # top 5 by median cycle time
     quality_hotspots: List[BucketMetrics]  # top 5 by bug+rework rate
+    # Data confidence overview
+    data_quality: Dict[str, any]  # timing_coverage, status_mapping_quality, etc.
+    # Narrative recommendations
+    recommendations: List[str]

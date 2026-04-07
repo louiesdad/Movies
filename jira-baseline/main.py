@@ -156,6 +156,19 @@ def _print_summary(summary, bucket_metrics):
             for b in hotspots[:5]:
                 print(f"    {str(b.bucket):<35} bug={b.bug_rate:.0%} rework={b.rework_rate:.0%}")
 
+    if s.data_quality:
+        dq = s.data_quality
+        print(f"\n{BOLD}  DATA QUALITY{RESET}")
+        print(f"    Timing coverage:    {dq['timing_coverage']:.0%}")
+        print(f"    Status mapping:     {dq['status_mapping_quality']:.0%} high-confidence")
+        print(f"    Size classification: {dq['size_confidence_quality']:.0%} from story points")
+        print(f"    Inclusion ratio:    {dq['included_ratio']:.0%}")
+
+    if s.recommendations:
+        print(f"\n{BOLD}  RECOMMENDATIONS{RESET}")
+        for r in s.recommendations:
+            print(f"    {DIM}•{RESET} {r}")
+
     print()
 
 
@@ -245,6 +258,63 @@ def cmd_inspect(args):
     print()
 
 
+def cmd_validate(args):
+    """Validate a YAML config file."""
+    try:
+        import yaml
+    except ImportError:
+        print("PyYAML is required. Install with: pip install pyyaml")
+        sys.exit(1)
+
+    if not os.path.exists(args.config):
+        print(f"Config file not found: {args.config}")
+        sys.exit(1)
+
+    with open(args.config) as f:
+        try:
+            raw = yaml.safe_load(f) or {}
+        except yaml.YAMLError as e:
+            print(f"{RED}YAML parse error:{RESET} {e}")
+            sys.exit(1)
+
+    from validate import validate_config
+    errors, warnings = validate_config(raw)
+
+    print(f"\n{BOLD}Config Validation: {args.config}{RESET}\n")
+
+    if errors:
+        print(f"{RED}  ERRORS ({len(errors)}):{RESET}")
+        for e in errors:
+            print(f"    - {e}")
+    else:
+        print(f"  {GREEN}No errors{RESET}")
+
+    if warnings:
+        print(f"\n{YELLOW}  WARNINGS ({len(warnings)}):{RESET}")
+        for w in warnings:
+            print(f"    - {w}")
+    else:
+        print(f"  {GREEN}No warnings{RESET}")
+
+    # Also try loading to verify end-to-end
+    if not errors:
+        try:
+            from config import load_config
+            config = load_config(args.config)
+            print(f"\n  {GREEN}Config loaded successfully.{RESET}")
+            print(f"    Status overrides: {len(config.status_overrides)}")
+            print(f"    Area rules:       {len(config.area_rules)}")
+            print(f"    Done statuses:    {len(config.done_statuses)}")
+            print(f"    Rework statuses:  {len(config.rework_statuses)}")
+        except Exception as e:
+            print(f"\n  {RED}Config load failed: {e}{RESET}")
+            errors.append(str(e))
+
+    print()
+    if errors:
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Jira Baseline Analytics V1"
@@ -273,12 +343,20 @@ def main():
     inspect_parser.add_argument("--tickets", "-n", type=int, default=50,
                                 help="Number of sample tickets (default: 50)")
 
+    # validate-config command
+    validate_parser = subparsers.add_parser("validate-config",
+                                             help="Validate a YAML config file")
+    validate_parser.add_argument("--config", "-c", required=True,
+                                  help="YAML config file path")
+
     args = parser.parse_args()
 
     if args.command == "analyze":
         cmd_analyze(args)
     elif args.command == "inspect-ticket":
         cmd_inspect(args)
+    elif args.command == "validate-config":
+        cmd_validate(args)
     else:
         parser.print_help()
         sys.exit(1)
