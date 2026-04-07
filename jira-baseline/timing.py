@@ -18,6 +18,7 @@ class TimingResult:
     cycle_time_days: Optional[float]
     backlog_wait_days: Optional[float]
     has_rework_transition: bool  # moved backward from done/review to active/ready
+    has_rework_status: bool      # changelog contains a configured rework status
     confidence: Confidence
 
 
@@ -29,16 +30,25 @@ def derive_timing(
     created_at: datetime,
     changelog: List[StatusTransition],
     resolved_static: Optional[datetime] = None,
+    rework_statuses: Optional[List[str]] = None,
 ) -> TimingResult:
     """Derive timing metrics from changelog transitions.
 
     Uses first transition into active/review as started_at,
     and first transition into done as resolved_at.
     Falls back to static resolved date if changelog is empty.
+
+    Args:
+        rework_statuses: Optional list of status names that indicate rework
+            (e.g. ["reopened", "rework"]). If a changelog transition targets
+            one of these statuses, has_rework_status is set to True.
     """
+    rework_set = {s.lower() for s in (rework_statuses or [])}
+
     started_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
     has_rework = False
+    has_rework_status = False
 
     # Track whether we've seen done/review before to detect rework
     seen_done = False
@@ -60,6 +70,10 @@ def derive_timing(
             has_rework = True
         if seen_review and to_phase in (Phase.ACTIVE, Phase.READY, Phase.BACKLOG):
             has_rework = True
+
+        # Rework detection: configured rework status names
+        if transition.to_status.lower() in rework_set:
+            has_rework_status = True
 
         if to_phase == Phase.DONE:
             seen_done = True
@@ -100,5 +114,6 @@ def derive_timing(
         cycle_time_days=round(cycle_time, 2) if cycle_time is not None else None,
         backlog_wait_days=round(backlog_wait, 2) if backlog_wait is not None else None,
         has_rework_transition=has_rework,
+        has_rework_status=has_rework_status,
         confidence=confidence,
     )

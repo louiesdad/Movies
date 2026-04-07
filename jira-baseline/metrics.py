@@ -52,11 +52,20 @@ def compute_bucket_metrics(tickets: List[NormalizedTicket]) -> List[BucketMetric
         clean_count = sum(1 for t in group
                           if t.outcome == Outcome.COMPLETED_CLEAN)
 
-        # Confidence
-        has_good_timing = len(cycle_times) / n if n > 0 else 0
-        if n >= 20 and has_good_timing >= 0.7:
+        # Confidence — factors: sample size, timing data quality,
+        # and status mapping confidence across the bucket
+        timing_ratio = len(cycle_times) / n if n > 0 else 0
+        high_conf_status = sum(
+            1 for t in group
+            if t.status_mapping_confidence == Confidence.HIGH
+        )
+        status_quality = high_conf_status / n if n > 0 else 0
+
+        if n >= 20 and timing_ratio >= 0.7 and status_quality >= 0.5:
             confidence = Confidence.HIGH
-        elif n >= 8 or (n >= 5 and has_good_timing >= 0.5):
+        elif n >= 8 and timing_ratio >= 0.5:
+            confidence = Confidence.MEDIUM
+        elif n >= 5 and timing_ratio >= 0.5:
             confidence = Confidence.MEDIUM
         else:
             confidence = Confidence.LOW

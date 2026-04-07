@@ -40,11 +40,12 @@ def normalize_issue(
     # Duplicate
     is_duplicate = status_normalizer.is_duplicate_resolution(issue.resolution)
 
-    # Timing
+    # Timing (pass config rework_statuses for status-name-based rework detection)
     timing = derive_timing(
         created_at=issue.created,
         changelog=issue.changelog,
         resolved_static=issue.resolved,
+        rework_statuses=config.rework_statuses,
     )
 
     # Size
@@ -64,14 +65,19 @@ def normalize_issue(
         config=config,
     )
 
-    # Bug detection
+    # Bug detection — linked_bugs populated by Jira client
+    # (config.defect_link_types will be used by LiveJiraClient to filter link types)
     has_bug = len(issue.linked_bugs) > 0
 
-    # Rework detection
-    has_rework = timing.has_rework_transition or has_bug
+    # Rework detection — three signal sources:
+    #   1. Changelog backward transition (high confidence)
+    #   2. Configured rework status appeared in changelog (high confidence)
+    #   3. Linked bug exists (medium confidence — may be pre-existing)
+    has_rework_strong = timing.has_rework_transition or timing.has_rework_status
+    has_rework = has_rework_strong or has_bug
     rework_confidence = None
     if has_rework:
-        if timing.has_rework_transition:
+        if has_rework_strong:
             rework_confidence = Confidence.HIGH
         else:
             rework_confidence = Confidence.MEDIUM
@@ -150,7 +156,10 @@ def run_analysis(
     Returns (tickets, bucket_metrics, summary).
     """
     cfg = config or ProjectConfig()
-    normalizer = StatusNormalizer(overrides=cfg.status_overrides)
+    normalizer = StatusNormalizer(
+        overrides=cfg.status_overrides,
+        extra_done_statuses=cfg.done_statuses,
+    )
 
     # Normalize all issues
     tickets = [

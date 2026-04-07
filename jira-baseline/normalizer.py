@@ -151,7 +151,8 @@ _BLOCKED_KEYWORDS: List[Tuple[str, float]] = [
 class StatusNormalizer:
     """Two-pass status normalizer: phase match + blocked modifier."""
 
-    def __init__(self, overrides: Optional[Dict[str, str]] = None):
+    def __init__(self, overrides: Optional[Dict[str, str]] = None,
+                 extra_done_statuses: Optional[List[str]] = None):
         self._overrides: Dict[str, Phase] = {}
         if overrides:
             for raw, phase_str in overrides.items():
@@ -159,6 +160,12 @@ class StatusNormalizer:
                     self._overrides[raw.lower().strip()] = Phase(phase_str.lower().strip())
                 except ValueError:
                     pass  # skip invalid overrides silently
+        # Inject additional done statuses from config
+        if extra_done_statuses:
+            for status in extra_done_statuses:
+                key = status.lower().strip()
+                if key not in self._overrides:
+                    self._overrides[key] = Phase.DONE
         self._cache: Dict[str, StatusMapping] = {}
 
     def map(self, raw_status: str) -> StatusMapping:

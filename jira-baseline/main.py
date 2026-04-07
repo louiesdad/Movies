@@ -25,7 +25,7 @@ from export import (
     export_summary_json,
     export_buckets_csv,
 )
-from models import Confidence, Outcome
+from models import Confidence, Outcome, Phase
 
 
 BOLD = "\033[1m"
@@ -88,6 +88,16 @@ def cmd_analyze(args):
     export_buckets_json(bucket_metrics, buckets_path)
     export_summary_json(summary, summary_path)
 
+    # Ranked slow-bucket export (always generated)
+    ranked_path = os.path.join(output_dir, "ranked_slow_buckets.json")
+    ranked = sorted(
+        [b for b in bucket_metrics if b.median_cycle_time_days is not None],
+        key=lambda b: b.median_cycle_time_days,
+        reverse=True,
+    )
+    from export import export_buckets_json as _export_ranked
+    _export_ranked(ranked, ranked_path)
+
     if args.csv:
         csv_path = os.path.join(output_dir, "bucket_baselines.csv")
         export_buckets_csv(bucket_metrics, csv_path)
@@ -96,6 +106,7 @@ def cmd_analyze(args):
     print(f"\n{BOLD}Exports:{RESET}")
     print(f"  {tickets_path}")
     print(f"  {buckets_path}")
+    print(f"  {ranked_path}")
     print(f"  {summary_path}")
 
 
@@ -176,9 +187,11 @@ def cmd_inspect(args):
 
     from pipeline import normalize_issue
     from normalizer import StatusNormalizer
-    normalizer = StatusNormalizer(
-        overrides=config.status_overrides if config else None)
     cfg = config or __import__('config').ProjectConfig()
+    normalizer = StatusNormalizer(
+        overrides=cfg.status_overrides,
+        extra_done_statuses=cfg.done_statuses,
+    )
     ticket = normalize_issue(matching[0], normalizer, cfg)
 
     print(f"\n{BOLD}TICKET: {ticket.key}{RESET}")
@@ -203,6 +216,32 @@ def cmd_inspect(args):
         print(f"  Excluded:     {ticket.exclusion_reason.value}")
     print(f"  Is epic:      {ticket.is_epic}")
     print(f"  Is duplicate: {ticket.is_duplicate}")
+
+    # Changelog diagnostics
+    issue = matching[0]
+    if issue.changelog:
+        print(f"\n{BOLD}  CHANGELOG ({len(issue.changelog)} transitions){RESET}")
+        for t in sorted(issue.changelog, key=lambda x: x.timestamp):
+            arrow = f"{t.from_status} → {t.to_status}"
+            phase_arrow = f"{t.from_phase.value} → {t.to_phase.value}"
+            ts = t.timestamp.strftime("%Y-%m-%d %H:%M")
+            is_backward = (
+                t.from_phase in (Phase.DONE, Phase.REVIEW)
+                and t.to_phase in (Phase.ACTIVE, Phase.READY)
+            )
+            marker = f" {RED}← REWORK{RESET}" if is_backward else ""
+            print(f"    {ts}  {arrow:<35} ({phase_arrow}){marker}")
+    else:
+        print(f"\n{DIM}  No changelog transitions available.{RESET}")
+
+    # Components, labels for area debugging
+    print(f"\n{BOLD}  CLASSIFICATION INPUTS{RESET}")
+    print(f"    Components:  {', '.join(issue.components) or 'none'}")
+    print(f"    Labels:      {', '.join(issue.labels) or 'none'}")
+    print(f"    Story pts:   {issue.story_points}")
+    print(f"    ACs:         {len(issue.acceptance_criteria)}")
+    print(f"    Subtasks:    {len(issue.subtasks)}")
+    print(f"    Linked bugs: {', '.join(issue.linked_bugs) or 'none'}")
     print()
 
 
