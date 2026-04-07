@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""
+Jira Baseline Analytics V1 — CLI entrypoint.
+
+Usage:
+    python main.py analyze --project PAY
+    python main.py analyze --project PAY --since 2025-01-01 --output ./out
+    python main.py analyze --project PAY --config ./project_rules.yaml
+    python main.py inspect-ticket --project PAY --ticket PAY-123
+"""
+
+import argparse
+import json
+import os
+import sys
+from datetime import datetime
+from typing import Optional
+
+from config import load_config
+from jira_client import SampleJiraClient
+from pipeline import run_analysis
+from export import (
+    export_tickets_jsonl,
+    export_buckets_json,
+    export_summary_json,
+    export_buckets_csv,
+)
+from models import Confidence, Outcome, Phase
+
+
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+RED = "\033[31m"
+CYAN = "\033[36m"
+
+
+def _conf_color(c: Confidence) -> str:
+    if c == Confidence.HIGH:
+        return GREEN
+    elif c == Confidence.MEDIUM:
+        return YELLOW
+    return RED
+
+
+def _parse_date(s: str) -> datetime:
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        print(f"Invalid date format: {s} (use YYYY-MM-DD)")
+        sys.exit(1)
+
+
+def _validate_config_inline(config_path):
+    """Run config validation inline and print warnings/errors."""
+    if not config_path:
+        return
+    try:
+        import yaml
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
+        from validate import validate_config
+        errors, warnings = validate_config(raw)
+        if errors:
+            print(f"\n{RED}Config errors in {config_path}:{RESET}")
+            for e in errors:
+                print(f"  {RED}- {e}{RESET}")
+            print(f"{RED}Fix these errors before analysis. Use validate-config for details.{RESET}")
+            sys.exit(1)
+        if warnings:
+            print(f"\n{YELLOW}Config warnings:{RESET}")
+            for w in warnings:
+                print(f"  {YELLOW}- {w}{RESET}")
+    except ImportError:
+        pass  # no YAML, config.load_config will handle this
+
+
+def cmd_analyze(args):
+    """Run baseline analysis on a project."""
+    _validate_config_inline(args.config)
+    config = load_config(args.config) if args.config else None
+    client = SampleJiraClient()
+
+    window_start = _parse_date(args.since) if args.since else None
+    window_end = _parse_date(args.until) if args.until else None
+
+    print(f"\n{BOLD}Fetching issues for {args.project}...{RESET}")
+    issues = client.fetch_issues(
+        args.project, since=window_start, until=window_end,
+        count=args.tickets,
+    )
+    print(f"  Fetched {len(issues)} issues")
+
+    print(f"{BOLD}Running analysis...{RESET}")
+    tickets, bucket_metrics, summary = run_analysis(
+        issues, args.project, config, window_start, window_end,
+    )
+
+    # Print summary to terminal
+    _print_summary(summary, bucket_metrics)
+
+    # Export files
+    output_dir = args.output or "."
+    os.makedirs(output_dir, exist_ok=True)
+
+    tickets_path = os.path.join(output_dir, "tickets_normalized.jsonl")
+    buckets_path = os.path.join(output_dir, "bucket_baselines.json")
+    summary_path = os.path.join(output_dir, "summary.json")
+
+    export_tickets_jsonl(tickets, tickets_path)
+    export_buckets_json(bucket_metrics, buckets_path)
+    export_summary_json(summary, summary_path)
+
+    # Ranked slow-bucket export (always generated)
+    ranked_path = os.path.join(output_dir, "ranked_slow_buckets.json")
+    ranked = sorted(
+        [b for b in bucket_metrics if b.median_cycle_time_days is not None],
+        key=lambda b: b.median_cycle_time_days,
+        reverse=True,
+    )
+    from export import export_buckets_json as _export_ranked
+    _export_ranked(ranked, ranked_path)
+
+    if args.csv:
+        csv_path = os.path.join(output_dir, "bucket_baselines.csv")
+        export_buckets_csv(bucket_metrics, csv_path)
+        print(f"  {DIM}Exported: {csv_path}{RESET}")
+
+    print(f"\n{BOLD}Exports:{RESET}")
+    print(f"  {tickets_path}")
+    print(f"  {buckets_path}")
+    print(f"  {ranked_path}")
+    print(f"  {summary_path}")
+
+
+def _print_summary(summary, bucket_metrics):
+    """Print human-readable summary to terminal."""
+    s = summary
+    print(f"\n{BOLD}{'═' * 60}{RESET}")
+    print(f"{BOLD}{CYAN}  BASELINE ANALYSIS: {s.project_key}{RESET}")
+    print(f"{BOLD}{'═' * 60}{RESET}")
+    print(f"  Issues fetched:    {s.total_issues_fetched}")
+    print(f"  In baseline:       {s.total_included_in_baseline}")
+    print(f"  Excluded:          {s.total_excluded}")
+    if s.exclusion_breakdown:
+        for reason, count in sorted(s.exclusion_breakdown.items()):
+            print(f"    {reason}: {count}")
+    print(f"  Buckets:           {s.bucket_count}")
+    print(f"  High-confidence:   {s.high_confidence_buckets}")
+
+    if bucket_metrics:
+        print(f"\n{BOLD}  BUCKET BASELINES{RESET}")
+        print(f"  {'Bucket':<35} {'N':>4} {'Med Cyc':>8} {'P75':>6} "
+              f"{'Bug%':>6} {'Rwk%':>6} {'Conf':<6}")
+        print(f"  {'─'*35} {'─'*4} {'─'*8} {'─'*6} {'─'*6} {'─'*6} {'─'*6}")
+        for b in sorted(bucket_metrics,
+                        key=lambda x: x.median_cycle_time_days or 0,
+                        reverse=True):
+            label = str(b.bucket)
+            cyc = f"{b.median_cycle_time_days:.1f}d" if b.median_cycle_time_days else "N/A"
+            p75 = f"{b.p75_cycle_time_days:.1f}d" if b.p75_cycle_time_days else "N/A"
+            bug = f"{b.bug_rate:.0%}"
+            rwk = f"{b.rework_rate:.0%}"
+            conf_color = _conf_color(b.baseline_confidence)
+            conf = f"{conf_color}{b.baseline_confidence.value}{RESET}"
+            print(f"  {label:<35} {b.sample_size:>4} {cyc:>8} {p75:>6} "
+                  f"{bug:>6} {rwk:>6} {conf}")
+
+    if s.slow_buckets:
+        print(f"\n{BOLD}  SLOWEST BUCKETS{RESET}")
+        for b in s.slow_buckets[:5]:
+            print(f"    {str(b.bucket):<35} median {b.median_cycle_time_days:.1f}d")
+
+    if s.quality_hotspots:
+        hotspots = [h for h in s.quality_hotspots
+                    if h.bug_rate + h.rework_rate > 0]
+        if hotspots:
+            print(f"\n{BOLD}  QUALITY HOTSPOTS{RESET}")
+            for b in hotspots[:5]:
+                print(f"    {str(b.bucket):<35} bug={b.bug_rate:.0%} rework={b.rework_rate:.0%}")
+
+    if s.data_quality:
+        dq = s.data_quality
+        print(f"\n{BOLD}  DATA QUALITY{RESET}")
+        print(f"    Timing coverage:    {dq['timing_coverage']:.0%}")
+        print(f"    Status mapping:     {dq['status_mapping_quality']:.0%} high-confidence")
+        print(f"    Size classification: {dq['size_confidence_quality']:.0%} from story points")
+        print(f"    Inclusion ratio:    {dq['included_ratio']:.0%}")
+
+    if s.recommendations:
+        print(f"\n{BOLD}  RECOMMENDATIONS{RESET}")
+        for r in s.recommendations:
+            print(f"    {DIM}•{RESET} {r}")
+
+    print()
+
+
+def cmd_inspect(args):
+    """Deep-dive on a single ticket."""
+    _validate_config_inline(getattr(args, 'config', None))
+    config = load_config(args.config) if args.config else None
+    client = SampleJiraClient()
+
+    # Parse ticket key
+    parts = args.ticket.rsplit("-", 1)
+    if len(parts) != 2:
+        print(f"Invalid ticket key: {args.ticket}")
+        sys.exit(1)
+    proj_key = parts[0]
+    try:
+        ticket_num = int(parts[1])
+    except ValueError:
+        print(f"Invalid ticket number: {parts[1]} (must be an integer)")
+        sys.exit(1)
+    if ticket_num < 1:
+        print(f"Invalid ticket number: {ticket_num} (must be >= 1)")
+        sys.exit(1)
+
+    issues = client.fetch_issues(proj_key, count=args.tickets)
+    matching = [i for i in issues if i.key == args.ticket]
+    if not matching:
+        print(f"Ticket {args.ticket} not found in {len(issues)} fetched issues")
+        sys.exit(1)
+
+    from pipeline import normalize_issue
+    from normalizer import StatusNormalizer
+    cfg = config or __import__('config').ProjectConfig()
+    normalizer = StatusNormalizer(
+        overrides=cfg.status_overrides,
+        extra_done_statuses=cfg.done_statuses,
+    )
+    ticket = normalize_issue(matching[0], normalizer, cfg)
+
+    print(f"\n{BOLD}TICKET: {ticket.key}{RESET}")
+    print(f"  Summary:      {ticket.raw_summary}")
+    print(f"  Type:         {ticket.raw_type} → {ticket.normalized_type.value}")
+    print(f"  Status:       {ticket.raw_status}")
+    print(f"  Size:         {ticket.size.value} (confidence: {ticket.size_confidence.value})")
+    print(f"  Area:         {ticket.area.value} (confidence: {ticket.area_confidence.value})")
+    print(f"  Bucket:       {ticket.normalized_type.value} / {ticket.size.value} / {ticket.area.value}")
+    print(f"  Created:      {ticket.created_at.strftime('%Y-%m-%d')}")
+    print(f"  Started:      {ticket.started_at.strftime('%Y-%m-%d') if ticket.started_at else 'N/A'}")
+    print(f"  Resolved:     {ticket.resolved_at.strftime('%Y-%m-%d') if ticket.resolved_at else 'N/A'}")
+    print(f"  Cycle time:   {ticket.cycle_time_days}d" if ticket.cycle_time_days is not None else "  Cycle time:   N/A")
+    print(f"  Lead time:    {ticket.lead_time_days}d" if ticket.lead_time_days is not None else "  Lead time:    N/A")
+    print(f"  Backlog wait: {ticket.backlog_wait_days}d" if ticket.backlog_wait_days is not None else "  Backlog wait: N/A")
+    print(f"  Has bug:      {ticket.has_bug}")
+    print(f"  Has rework:   {ticket.has_rework}" +
+          (f" (confidence: {ticket.rework_confidence.value})" if ticket.rework_confidence else ""))
+    print(f"  Outcome:      {ticket.outcome.value}")
+    print(f"  In baseline:  {ticket.included_in_baseline}")
+    if ticket.exclusion_reason:
+        print(f"  Excluded:     {ticket.exclusion_reason.value}")
+    print(f"  Is epic:      {ticket.is_epic}")
+    print(f"  Is duplicate: {ticket.is_duplicate}")
+
+    # Changelog diagnostics
+    issue = matching[0]
+    if issue.changelog:
+        print(f"\n{BOLD}  CHANGELOG ({len(issue.changelog)} transitions){RESET}")
+        for t in sorted(issue.changelog, key=lambda x: x.timestamp):
+            arrow = f"{t.from_status} → {t.to_status}"
+            phase_arrow = f"{t.from_phase.value} → {t.to_phase.value}"
+            ts = t.timestamp.strftime("%Y-%m-%d %H:%M")
+            is_backward = (
+                t.from_phase in (Phase.DONE, Phase.REVIEW)
+                and t.to_phase in (Phase.ACTIVE, Phase.READY)
+            )
+            marker = f" {RED}← REWORK{RESET}" if is_backward else ""
+            print(f"    {ts}  {arrow:<35} ({phase_arrow}){marker}")
+    else:
+        print(f"\n{DIM}  No changelog transitions available.{RESET}")
+
+    # Components, labels for area debugging
+    print(f"\n{BOLD}  CLASSIFICATION INPUTS{RESET}")
+    print(f"    Components:  {', '.join(issue.components) or 'none'}")
+    print(f"    Labels:      {', '.join(issue.labels) or 'none'}")
+    print(f"    Story pts:   {issue.story_points}")
+    print(f"    ACs:         {len(issue.acceptance_criteria)}")
+    print(f"    Subtasks:    {len(issue.subtasks)}")
+    print(f"    Linked bugs: {', '.join(issue.linked_bugs) or 'none'}")
+    print()
+
+
+def cmd_validate(args):
+    """Validate a YAML config file."""
+    try:
+        import yaml
+    except ImportError:
+        print("PyYAML is required. Install with: pip install pyyaml")
+        sys.exit(1)
+
+    if not os.path.exists(args.config):
+        print(f"Config file not found: {args.config}")
+        sys.exit(1)
+
+    with open(args.config) as f:
+        try:
+            raw = yaml.safe_load(f) or {}
+        except yaml.YAMLError as e:
+            print(f"{RED}YAML parse error:{RESET} {e}")
+            sys.exit(1)
+
+    from validate import validate_config
+    errors, warnings = validate_config(raw)
+
+    print(f"\n{BOLD}Config Validation: {args.config}{RESET}\n")
+
+    if errors:
+        print(f"{RED}  ERRORS ({len(errors)}):{RESET}")
+        for e in errors:
+            print(f"    - {e}")
+    else:
+        print(f"  {GREEN}No errors{RESET}")
+
+    if warnings:
+        print(f"\n{YELLOW}  WARNINGS ({len(warnings)}):{RESET}")
+        for w in warnings:
+            print(f"    - {w}")
+    else:
+        print(f"  {GREEN}No warnings{RESET}")
+
+    # Also try loading to verify end-to-end
+    if not errors:
+        try:
+            from config import load_config
+            config = load_config(args.config)
+            print(f"\n  {GREEN}Config loaded successfully.{RESET}")
+            print(f"    Status overrides: {len(config.status_overrides)}")
+            print(f"    Area rules:       {len(config.area_rules)}")
+            print(f"    Done statuses:    {len(config.done_statuses)}")
+            print(f"    Rework statuses:  {len(config.rework_statuses)}")
+        except Exception as e:
+            print(f"\n  {RED}Config load failed: {e}{RESET}")
+            errors.append(str(e))
+
+    print()
+    if errors:
+        sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Jira Baseline Analytics V1"
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    # analyze command
+    analyze_parser = subparsers.add_parser("analyze", help="Run baseline analysis")
+    analyze_parser.add_argument("--project", "-p", required=True,
+                                help="Jira project key (e.g., PAY)")
+    analyze_parser.add_argument("--since", help="Start date (YYYY-MM-DD)")
+    analyze_parser.add_argument("--until", help="End date (YYYY-MM-DD)")
+    analyze_parser.add_argument("--output", "-o", help="Output directory")
+    analyze_parser.add_argument("--config", "-c", help="YAML config file path")
+    analyze_parser.add_argument("--tickets", "-n", type=int, default=50,
+                                help="Number of sample tickets (default: 50)")
+    analyze_parser.add_argument("--csv", action="store_true",
+                                help="Also export bucket baselines as CSV")
+
+    # inspect-ticket command
+    inspect_parser = subparsers.add_parser("inspect-ticket",
+                                            help="Deep-dive on a single ticket")
+    inspect_parser.add_argument("--ticket", "-t", required=True,
+                                help="Ticket key (e.g., PAY-123)")
+    inspect_parser.add_argument("--config", "-c", help="YAML config file path")
+    inspect_parser.add_argument("--tickets", "-n", type=int, default=50,
+                                help="Number of sample tickets (default: 50)")
+
+    # validate-config command
+    validate_parser = subparsers.add_parser("validate-config",
+                                             help="Validate a YAML config file")
+    validate_parser.add_argument("--config", "-c", required=True,
+                                  help="YAML config file path")
+
+    args = parser.parse_args()
+
+    if args.command == "analyze":
+        cmd_analyze(args)
+    elif args.command == "inspect-ticket":
+        cmd_inspect(args)
+    elif args.command == "validate-config":
+        cmd_validate(args)
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
