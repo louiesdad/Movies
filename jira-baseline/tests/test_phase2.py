@@ -113,14 +113,16 @@ class TestConfigDrivenRework(unittest.TestCase):
 class TestReworkConfidenceLevels(unittest.TestCase):
     """Tests that rework confidence matches the signal source."""
 
-    def test_bug_only_rework_gets_medium_confidence(self):
-        """Linked bug without backward transition → MEDIUM confidence."""
+    def test_bug_does_not_imply_rework(self):
+        """Linked bug without backward transition → has_bug=True but has_rework=False.
+        Bug and rework are independent signals."""
         issue = _make_issue(linked_bugs=["BUG-1"])
         config = ProjectConfig()
         normalizer = StatusNormalizer(extra_done_statuses=config.done_statuses)
         ticket = normalize_issue(issue, normalizer, config)
-        self.assertTrue(ticket.has_rework)
-        self.assertEqual(ticket.rework_confidence, Confidence.MEDIUM)
+        self.assertTrue(ticket.has_bug)
+        self.assertFalse(ticket.has_rework)
+        self.assertIsNone(ticket.rework_confidence)
 
     def test_backward_transition_rework_gets_high_confidence(self):
         """Backward changelog transition → HIGH confidence."""

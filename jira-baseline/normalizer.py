@@ -154,12 +154,15 @@ class StatusNormalizer:
     def __init__(self, overrides: Optional[Dict[str, str]] = None,
                  extra_done_statuses: Optional[List[str]] = None):
         self._overrides: Dict[str, Phase] = {}
+        self._invalid_overrides: List[str] = []
         if overrides:
             for raw, phase_str in overrides.items():
                 try:
                     self._overrides[raw.lower().strip()] = Phase(phase_str.lower().strip())
                 except ValueError:
-                    pass  # skip invalid overrides silently
+                    self._invalid_overrides.append(
+                        f"'{raw}': invalid phase '{phase_str}'"
+                    )
         # Inject additional done statuses from config
         if extra_done_statuses:
             for status in extra_done_statuses:
@@ -234,3 +237,7 @@ class StatusNormalizer:
         if not resolution:
             return False
         return "duplicate" in resolution.lower()
+
+    def is_duplicate_status(self, raw_status: str) -> bool:
+        """Check if a status itself indicates duplicate (e.g. status='Duplicate')."""
+        return "duplicate" in raw_status.lower()

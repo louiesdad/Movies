@@ -53,8 +53,33 @@ def _parse_date(s: str) -> datetime:
         sys.exit(1)
 
 
+def _validate_config_inline(config_path):
+    """Run config validation inline and print warnings/errors."""
+    if not config_path:
+        return
+    try:
+        import yaml
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
+        from validate import validate_config
+        errors, warnings = validate_config(raw)
+        if errors:
+            print(f"\n{RED}Config errors in {config_path}:{RESET}")
+            for e in errors:
+                print(f"  {RED}- {e}{RESET}")
+            print(f"{RED}Fix these errors before analysis. Use validate-config for details.{RESET}")
+            sys.exit(1)
+        if warnings:
+            print(f"\n{YELLOW}Config warnings:{RESET}")
+            for w in warnings:
+                print(f"  {YELLOW}- {w}{RESET}")
+    except ImportError:
+        pass  # no YAML, config.load_config will handle this
+
+
 def cmd_analyze(args):
     """Run baseline analysis on a project."""
+    _validate_config_inline(args.config)
     config = load_config(args.config) if args.config else None
     client = SampleJiraClient()
 
@@ -174,6 +199,7 @@ def _print_summary(summary, bucket_metrics):
 
 def cmd_inspect(args):
     """Deep-dive on a single ticket."""
+    _validate_config_inline(getattr(args, 'config', None))
     config = load_config(args.config) if args.config else None
     client = SampleJiraClient()
 

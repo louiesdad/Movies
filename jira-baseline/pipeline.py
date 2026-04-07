@@ -37,8 +37,11 @@ def normalize_issue(
         Confidence.MEDIUM if status_mapping.confidence >= 0.6 else Confidence.LOW
     )
 
-    # Duplicate
-    is_duplicate = status_normalizer.is_duplicate_resolution(issue.resolution)
+    # Duplicate — check both resolution field AND status mapped as duplicate
+    is_duplicate = (
+        status_normalizer.is_duplicate_resolution(issue.resolution)
+        or status_normalizer.is_duplicate_status(issue.status)
+    )
 
     # Timing (pass config rework_statuses for status-name-based rework detection)
     timing = derive_timing(
@@ -75,18 +78,15 @@ def normalize_issue(
     )
     has_bug = len(issue.linked_bugs) > 0 or has_bug_from_links
 
-    # Rework detection — three signal sources:
-    #   1. Changelog backward transition (high confidence)
-    #   2. Configured rework status appeared in changelog (high confidence)
-    #   3. Linked bug exists (medium confidence — may be pre-existing)
-    has_rework_strong = timing.has_rework_transition or timing.has_rework_status
-    has_rework = has_rework_strong or has_bug
+    # Rework detection — independent from bug detection.
+    # A linked bug means a defect was found, NOT that rework occurred.
+    # Rework signals come only from the changelog:
+    #   1. Backward transition (done/review → active/ready) — high confidence
+    #   2. Configured rework status appeared in changelog — high confidence
+    has_rework = timing.has_rework_transition or timing.has_rework_status
     rework_confidence = None
     if has_rework:
-        if has_rework_strong:
-            rework_confidence = Confidence.HIGH
-        else:
-            rework_confidence = Confidence.MEDIUM
+        rework_confidence = Confidence.HIGH
 
     # Exclusion logic
     included = True
@@ -166,6 +166,12 @@ def run_analysis(
         overrides=cfg.status_overrides,
         extra_done_statuses=cfg.done_statuses,
     )
+
+    # Surface any invalid override warnings
+    if normalizer._invalid_overrides:
+        import sys
+        for warning in normalizer._invalid_overrides:
+            print(f"WARNING: invalid status override {warning}", file=sys.stderr)
 
     # Normalize all issues
     tickets = [
