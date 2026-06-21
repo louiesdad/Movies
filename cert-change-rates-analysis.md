@@ -178,6 +178,70 @@ CUMULATIVE MAJOR CERTIFICATION EVENTS
 
 ---
 
+## Part 6: The Acceleration of AI Change — The Curve Is Getting Steeper
+
+The 5:1 ratio above understates the real problem because it treats the AI change rate as a fixed number. It is not. The rate of change in AI development is itself accelerating — the curve is convex, not linear.
+
+Consider the model-release intervals for Claude specifically:
+
+| Generation | Release | Gap from Prior |
+|---|---|---|
+| Claude 1 | Mar 2023 | — |
+| Claude 2 | Jul 2023 | 4 months |
+| Claude 2.1 | Nov 2023 | 4 months |
+| Claude 3 (Opus/Sonnet/Haiku) | Mar 2024 | 4 months |
+| Claude 3.5 Sonnet | Jun 2024 | 3 months |
+| Claude 3.5 Computer Use | Oct 2024 | 4 months |
+| Claude 3.7 Sonnet (extended thinking) | Feb 2025 | 4 months |
+| Claude Opus 4 / Sonnet 4 | May 2025 | 3 months |
+| Claude 4.1, 4.5, Haiku 4.5 | Aug–Nov 2025 | 3–4 months each |
+| Claude 4.6, 4.7, 4.8 | Feb–May 2026 | ~5–6 weeks each |
+| Claude Fable 5 | Jun 2026 | ~4 weeks |
+
+The gap between major releases **was 4 months in 2023–2024; it is now 4–6 weeks in 2026**. The same compression is visible in OpenAI's release cadence: GPT-4 to GPT-4o was ~14 months; GPT-4o to o1 was ~5 months; o1 to o3 to GPT-5 to GPT-5.5 happened within roughly 12 months. Scaling investment, competition, and parallel research tracks are all compressing the interval.
+
+This means the certification obsolescence problem does not stay constant — it gets worse every year. A cert program launched with an 18-month validity window in 2024 (like AWS AIF-C01) is already being revised at 18 months. A cert program launched in 2026 with the same 18-month window will almost certainly require revision at 12 months or less, because the underlying models will have crossed more paradigm boundaries in that shorter window than they did in 2024.
+
+**The acceleration of AI development means any fixed certification lifespan becomes increasingly inadequate over time, not stable.**
+
+---
+
+## Part 7: The Economic Absurdity of Perpetual AI Recertification
+
+Beyond the logistical problem lies a straightforward economic argument that makes AI certification programs structurally untenable as a market proposition.
+
+### The Traditional Cert Economics (What Works)
+
+A professional earns an Azure Solutions Architect cert (~$165 exam fee) and holds it for 2–3 years before renewal. Over a decade, that is 3–4 exam fees: roughly $500–700 total spend for a credential that maintains consistent market recognition throughout. Employers recognize the credential. HR systems filter for it. The ROI math is clear.
+
+### The AI Cert Economics (What Doesn't)
+
+If AI certifications require updates every 6–12 months to remain meaningful:
+
+| Scenario | Exam Fee | Annual Cost | 3-Year Cost | Market Recognition at Year 3 |
+|---|---|---|---|---|
+| Traditional cert (e.g., AZ-204, 2-yr validity) | ~$165 | ~$83 | ~$250 | High (stable credential) |
+| AI cert at 12-month renewal cadence | ~$150–200 | ~$150–200 | ~$450–600 | Low (credential version obsolete) |
+| AI cert at 6-month renewal cadence | ~$150–200 | ~$300–400 | ~$900–1,200 | Near zero (nobody can track it) |
+
+At a 6-month update cycle, a practitioner would spend **more renewing a single AI certification over three years than on a full traditional cloud certification stack** — and end up with a credential that the market has not had time to standardize around. Employers cannot write job descriptions around "Anthropic CCA v4.8 (May 2026)" because by the time the posting is filled, that cert version is already superseded.
+
+The financial burden compounds when you consider organizations deploying AI at scale. If an enterprise wants 50 team members certified on Claude and the cert requires semi-annual renewal:
+
+- **50 people × $175 exam fee × 2 renewals/year = $17,500/year**, just in exam fees
+- Plus lost productivity for study and exam time (~8–16 hours per person per cycle)
+- For a credential whose content the employees largely already surpassed through daily hands-on work
+
+This is not a certification program — it is a subscription revenue stream for the AI provider with minimal knowledge-validation value returned to the market.
+
+### The Deeper Problem: Who Benefits?
+
+Traditional certifications create a three-way value exchange: the professional gains a recognized credential, the employer gains a hiring signal, and the vendor gains ecosystem growth. That exchange works because the credential retains value long enough for all three parties to benefit from it.
+
+AI certifications at current model velocity primarily benefit one party: the certification vendor collecting recurring exam fees. The professional's credential is outdated before it is widely recognized. The employer cannot rely on it as a stable hiring signal. The vendor gains revenue and mindshare. This is not a market that will sustain itself voluntarily — practitioners will either pay once to check the box and then ignore renewal, or they will recognize that direct product experience is a stronger signal than the badge and skip the cert entirely.
+
+---
+
 ## Conclusion
 
-The data validates the original contention. Traditional tech certifications change at a pace the market has proven it can absorb: 2–4 year product-version cycles, 6–12 year program restructurings, with well-signaled deprecation timelines. The AI provider certification landscape, by contrast, is running at **5× the change velocity of the most active traditional cert programs**, and that rate is still accelerating. A practitioner's most reliable investment is not a badge that reflects a model version from 18 months ago — it is the habit of continuous, direct engagement with AI systems as they evolve, supplemented by short-validity, scenario-based assessments at most. Static multi-year AI certifications will either require near-constant renewal (making them administratively burdensome) or they will drift into irrelevance by the time they achieve market recognition.
+The data validates the original contention on two levels. First, **the pace**: AI certification programs are running at 5× the change velocity of traditional cert programs, with that ratio worsening as model release intervals compress from months to weeks. Second, **the economics**: perpetual recertification at that pace produces a compounding fee burden with declining credential value — a transaction that the market will rationally reject. The durable investment for AI practitioners is not a badge pegged to a model version that will be superseded in weeks. It is the practice of continuous, direct engagement with AI systems as they evolve — which cannot be packaged into an exam, sold as a credential, or renewed on a schedule.
